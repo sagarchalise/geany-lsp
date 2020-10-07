@@ -23,20 +23,21 @@
 #include "lspfeature.h"
 
 static
-gboolean check_capability_feature_flag(GVariant *server_capabilities, const gchar *key, const gchar *root_key){
+gboolean check_capability_feature_flag(GVariant *server_capabilities, const gchar *root_key, const gchar *key){
     g_autoptr(GVariant) capabilities = get_server_capability_for_key(server_capabilities, root_key, NULL);
     if(capabilities == NULL){
-        msgwin_status_add("No text capabilities for %s.", key);
+        msgwin_status_add("No capabilities for %s.", key);
         return FALSE;
     }
-    gboolean flag = FALSE;
-    if(!JSONRPC_MESSAGE_PARSE (capabilities,
-        key, JSONRPC_MESSAGE_GET_BOOLEAN (&flag)
-        )
-    ){
+    if(key == NULL){
+        if(g_variant_is_of_type(capabilities, G_VARIANT_TYPE_BOOLEAN)){
+            return g_variant_get_boolean(capabilities);
+        }
+        if(g_variant_is_of_type(capabilities, G_VARIANT_TYPE_VARDICT)){
+            return TRUE;
+        }
         return FALSE;
     }
-    return flag;
 }
 
 static
@@ -210,9 +211,7 @@ void lsp_completion_ask_resolve(JsonrpcClient *rpc_client, GeanyData *geany_data
 
 }
 static void
-lsp_detail_cb (GObject      *object,
-                                         GAsyncResult *result,
-                                         gpointer      user_data)
+lsp_detail_cb (GObject  *object, GAsyncResult *result, gpointer user_data)
 {
     JsonrpcClient *rpc_client = (JsonrpcClient *)object;
     GeanyDocument *doc = document_get_current();
@@ -226,23 +225,26 @@ lsp_detail_cb (GObject      *object,
       return;
     }
     const gchar *message = NULL;
-    if(JSONRPC_MESSAGE_PARSE (reply, "contents", JSONRPC_MESSAGE_GET_STRING (&message))){
-        msgwin_clear_tab(MSG_MESSAGE);
+    msgwin_clear_tab(MSG_MESSAGE);
+
+    if(JSONRPC_MESSAGE_PARSE (reply, "contents", JSONRPC_MESSAGE_GET_STRING (&message)) ||
+        JSONRPC_MESSAGE_PARSE (reply, "contents",
+            "{",
+                "value", JSONRPC_MESSAGE_GET_STRING (&message),
+            "}") ){
         msgwin_msg_add(COLOR_BLACK, sci_get_line_from_position(doc->editor->sci, pos), doc, "Doc:\n\n%s", message );
     }
 }
-void lsp_ask_detail(JsonrpcClient *rpc_client, GeanyData *geany_data, gint pos){
-    GeanyDocument *doc = document_get_current();
-  g_return_if_fail(DOC_VALID(doc));
-  g_autoptr(GVariant) params = NULL;
-  g_autofree gchar *uri = NULL;
-  gint line, column;
+void lsp_ask_detail(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos){
+    if(!check_capability_feature_flag(client_manager->server_capabilities, "hoverProvider", NULL)){
+        msgwin_status_add("LSP no hover feature.");
+        return;
+    }
+    g_autoptr(GVariant) params = NULL;
+    gint line, column;
     ScintillaObject *sci;
     sci = doc->editor->sci;
-    line = sci_get_current_line(sci);
-    GFile *dir;
-	dir = g_file_new_for_path(doc->real_path);
-	uri = g_file_get_uri(dir);
+    line = sci_get_line_from_position(sci, pos);
     column = sci_get_col_from_position(sci, pos);
     params = JSONRPC_MESSAGE_NEW (
     "textDocument", "{",
@@ -253,14 +255,14 @@ void lsp_ask_detail(JsonrpcClient *rpc_client, GeanyData *geany_data, gint pos){
       "character", JSONRPC_MESSAGE_PUT_INT32 (column),
     "}"
     );
-  jsonrpc_client_call_async (rpc_client,
+    jsonrpc_client_call_async (client_manager->rpc_client,
                              "textDocument/hover",
                              params,
                              NULL,
                              lsp_detail_cb,
-                             &pos);
-
+                             GINT_TO_POINTER(pos));
 }
+
 
 static void
 lsp_signature_cb (GObject      *object,
@@ -287,6 +289,7 @@ lsp_signature_cb (GObject      *object,
         g_autoptr(GVariant) node = NULL;
         GString *signatures = g_string_new("");
         gint count = 0;
+        gint offset = 0;
         while (g_variant_iter_loop (&iter, "v", &node))
         {
             const gchar *label;
@@ -306,7 +309,11 @@ lsp_signature_cb (GObject      *object,
         g_string_free(signatures, TRUE);
     }
 }
-void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos){
+void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos, gint kind){
+    if(!check_capability_feature_flag(client_manager->server_capabilities, "signatureHelpProvider", NULL)){
+        msgwin_status_add("LSP no hover feature.");
+        return;
+    }
     g_autoptr(GVariant) params = NULL;
     ScintillaObject *sci;
     sci = doc->editor->sci;
@@ -321,7 +328,7 @@ void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, g
       "character", JSONRPC_MESSAGE_PUT_INT32 (column),
     "}",
     "context", "{",
-        "triggerKind", JSONRPC_MESSAGE_PUT_INT32 (1),
+        "triggerKind", JSONRPC_MESSAGE_PUT_INT32 (kind),
     "}"
   );
   jsonrpc_client_call_async (client_manager->rpc_client,

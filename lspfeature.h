@@ -31,7 +31,7 @@ extern GeanyData *geany_data;
 
 void lsp_completion_on_doc(JsonrpcClient *rpc_client, GeanyData *geany_data, gint pos);
 void lsp_completion_ask_resolve(JsonrpcClient *rpc_client, GeanyData *geany_data, gchar *text);
-void lsp_ask_detail(JsonrpcClient *rpc_client, GeanyData *geany_data, gint pos);
-void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos);
+void lsp_ask_detail(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos);
+void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos, gint kind);
 
 #endif

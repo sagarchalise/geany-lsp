@@ -135,6 +135,7 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 	if (!highlighting_is_code_style(lexer, style))
 		return ret;
 
+
 	/* For detailed documentation about the SCNotification struct, please see
 	 * http://www.scintilla.org/ScintillaDoc.html#Notifications. */
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
@@ -184,9 +185,11 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 			// break;
             //self.get_jedi_doc_and_signatures(editor, pos, text=nt_text, doc=False)
 		case SCN_DWELLSTART:
-            lsp_ask_signature_help(client_manager, doc, doc_track->uri, nt->position);
+            lsp_ask_signature_help(client_manager, doc, doc_track->uri, nt->position, 1);
+            lsp_ask_detail( client_manager, doc, doc_track->uri, nt->position);
 			break;
         case SCN_DWELLEND:
+			msgwin_clear_tab(MSG_MESSAGE);
             sci_send_command(editor->sci, SCI_CALLTIPCANCEL);
             break;
         default:
@@ -227,10 +230,10 @@ static void on_document_save(GObject *obj, GeanyDocument *doc, gpointer user_dat
 	}
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
-	if(doc->changed){
-		doc_track->version++;
-		lsp_doc_changed(client_manager, doc, doc_track);
-	}
+	//if(doc->changed){
+		//doc_track->version++;
+		//lsp_doc_changed(client_manager, doc, doc_track);
+	//}
 	lsp_doc_saved(client_manager, doc, doc_track->uri);
 }
 static void on_document_before_save(GObject *obj, GeanyDocument *doc, gpointer user_data){
@@ -240,10 +243,11 @@ static void on_document_before_save(GObject *obj, GeanyDocument *doc, gpointer u
 	}
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
-	if(doc->changed){
-		doc_track->version++;
-		lsp_doc_changed(client_manager, doc, doc_track);
-	}
+	//if(doc->changed){
+	// doc_track->version++;
+	//  lsp_doc_changed(client_manager, doc, doc_track);
+	//}
+	//lsp_doc_format(client_manager, doc, doc_track->uri);
 	lsp_doc_will_save(client_manager, doc, doc_track->uri);
 
 }

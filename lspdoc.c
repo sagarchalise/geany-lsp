@@ -249,11 +249,16 @@ lsp_format_doc_cb (GObject      *object,
         continue;
         }
         if(new_text != NULL){
-            gint line_cnt = sci_get_line_count(doc->editor->sci);
-            gint cur_line = sci_get_current_line(doc->editor->sci);
-            sci_set_text(doc->editor->sci, new_text);
-            gint new_line_cnt = sci_get_line_count(doc->editor->sci);
-            sci_set_current_position(doc->editor->sci, sci_get_position_from_line(doc->editor->sci, (cur_line + (new_line_cnt - line_cnt))), TRUE);
+            gint start_pos = sci_get_position_from_line(doc->editor->sci, begin.line) + begin.column;
+            gint end_pos = sci_get_position_from_line(doc->editor->sci, end.line) + end.column;
+            sci_set_selection_start(doc->editor->sci, start_pos);
+            sci_set_selection_end(doc->editor->sci, end_pos);
+            msgwin_status_add("%d, %d", start_pos, end_pos);
+            // gint line_cnt = sci_get_line_count(doc->editor->sci);
+            // gint cur_line = sci_get_current_line(doc->editor->sci);
+            // sci_set_text(doc->editor->sci, new_text);
+            // gint new_line_cnt = sci_get_line_count(doc->editor->sci);
+            // sci_set_current_position(doc->editor->sci, sci_get_position_from_line(doc->editor->sci, (cur_line + (new_line_cnt - line_cnt))), TRUE);
         }
     }
 }

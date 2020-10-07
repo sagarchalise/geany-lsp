@@ -22,6 +22,7 @@
  */
 #include "client.h"
 
+
 enum {
   SEVERITY_ERROR       = 1,
   SEVERITY_WARNING     = 2,
@@ -39,6 +40,7 @@ lsp_client_handle_call (JsonrpcClient *self,
                //msgwin_status_add_string(g_variant_get_string (params, NULL));
                return TRUE;
                }
+
 static void
 add_diagnostics_to_cache(GVariant *params)
 {
@@ -57,6 +59,7 @@ add_diagnostics_to_cache(GVariant *params)
     "diagnostics", JSONRPC_MESSAGE_GET_ITER (&json_diagnostics)
   );
     uri = uri+7;
+
     //msgwin_status_add("%s %s %d %d", doc->real_path, uri, success, utils_str_equal(doc->real_path, uri));
   if (utils_str_equal(doc->real_path, uri) && success)
     {
@@ -132,7 +135,6 @@ add_diagnostics_to_cache(GVariant *params)
         editor_indicator_set_on_range(doc->editor, 34, sci_get_position_from_line(doc->editor->sci, begin.line)+begin.column, sci_get_position_from_line(doc->editor->sci, end.line)+end.column);
 
     }
-
     }
 
 }
@@ -273,6 +275,7 @@ void initialize_lsp_client(ClientManager *client_manager, GIOStream *iostream, G
       "}",
     "}"
   );
+
     if(iostream != NULL){
         client_manager->rpc_client = jsonrpc_client_new(iostream);
         g_signal_connect(client_manager->rpc_client, "notification",
