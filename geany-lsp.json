@@ -1,0 +1,15 @@
+{
+  "Python": {
+    "cmd": "/usr/local/bin/pyls",
+    "args": [
+      "-v"
+    ],
+    "only_project": false,
+    "pass_project": false,
+    "env": null
+  },
+  "C-Like": {
+    "cmd": "/usr/bin/clangd --log=info",
+    "only_project": true
+  }
+}
