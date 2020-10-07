@@ -40,7 +40,10 @@ void ready_lsp_json_node(GeanyData *geany_data, JsonNode *cnf_node, JsonParser *
 	}
 }
 
-void override_cnf(GeanyData *geany_data){
+void override_cnf(gchar *base_path, const gchar *file_name){
+	g_autoptr(GError) error=NULL;
+	const gchar *cnf_file =  g_build_path(G_DIR_SEPARATOR_S, base_path, "."CNF_FILE, NULL);
+	//json_parser_load_from_file (cnf_parser, cnf_file, &error);
 	// JsonParser *proj_json;
 	// JsonObject *cur_cnf;
 	// JsonNode *cur_json;

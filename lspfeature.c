@@ -23,6 +23,23 @@
 #include "lspfeature.h"
 
 static
+gboolean check_capability_feature_flag(GVariant *server_capabilities, const gchar *key, const gchar *root_key){
+    g_autoptr(GVariant) capabilities = get_server_capability_for_key(server_capabilities, root_key, NULL);
+    if(capabilities == NULL){
+        msgwin_status_add("No text capabilities for %s.", key);
+        return FALSE;
+    }
+    gboolean flag = FALSE;
+    if(!JSONRPC_MESSAGE_PARSE (capabilities,
+        key, JSONRPC_MESSAGE_GET_BOOLEAN (&flag)
+        )
+    ){
+        return FALSE;
+    }
+    return flag;
+}
+
+static
 void lsp_completion_cb(GObject      *object,
                                          GAsyncResult *result,
                                          gpointer      user_data)
@@ -235,7 +252,7 @@ void lsp_ask_detail(JsonrpcClient *rpc_client, GeanyData *geany_data, gint pos){
       "line", JSONRPC_MESSAGE_PUT_INT32 (line),
       "character", JSONRPC_MESSAGE_PUT_INT32 (column),
     "}"
-  );
+    );
   jsonrpc_client_call_async (rpc_client,
                              "textDocument/hover",
                              params,
@@ -302,6 +319,9 @@ void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, g
     "position", "{",
       "line", JSONRPC_MESSAGE_PUT_INT32 (line),
       "character", JSONRPC_MESSAGE_PUT_INT32 (column),
+    "}",
+    "context", "{",
+        "triggerKind", JSONRPC_MESSAGE_PUT_INT32 (1),
     "}"
   );
   jsonrpc_client_call_async (client_manager->rpc_client,

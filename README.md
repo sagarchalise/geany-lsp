@@ -8,8 +8,11 @@
     cd build
     cmake ..
     make
-    make install
     ```
+
+    - currently install by copying geany-lsp.so and geany-lsp.json into ~/.config/geany/plugins
+    - enable the plugin from geany editor.
+
 
 
 #### WARNING: BUGGY

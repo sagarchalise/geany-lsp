@@ -56,11 +56,17 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 		client_manager = g_hash_table_lookup(process_map, file_type_name);
 	}
 	else{
-		JsonObject *cur_node = json_node_get_object(json_object_get_member(lsp_json_cnf, file_type_name));
-		gboolean pass_project = json_object_get_boolean_member(cur_node, "pass_project");
-		gboolean only_project = json_object_get_boolean_member(cur_node, "only_project");
+		JsonObject *cur_node = json_object_get_object_member(lsp_json_cnf, file_type_name);
+		gboolean only_project = FALSE;
+		if(json_object_has_member(cur_node, "only_project")){
+			only_project = json_object_get_boolean_member(cur_node, "only_project");
+		}
 		if(only_project && geany_data->app->project == NULL){
 			return FALSE;
+		}
+		JsonObject *env_members = NULL;
+		if(json_object_has_member(cur_node, "env")){
+			env_members = json_object_get_object_member(cur_node, "env");
 		}
 		GSubprocessLauncher *subprocess_launcher;
 		GSubprocess *subprocess;
@@ -71,8 +77,18 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 		}
 		const gchar*  pth = "PATH";
 		g_subprocess_launcher_setenv(subprocess_launcher, "HOME", g_get_home_dir(), TRUE);
-		g_subprocess_launcher_setenv(subprocess_launcher, pth, g_getenv(pth), TRUE);
-		subprocess = g_subprocess_launcher_spawnv(subprocess_launcher, g_strsplit(json_object_get_string_member(cur_node, "cmd"), " ", -1),NULL);
+		g_subprocess_launcher_setenv(subprocess_launcher, pth, g_getenv(pth), TRUE);;
+		if (env_members != NULL){
+			JsonObjectIter iter;
+			const gchar *member_name;
+			JsonNode *member_node;
+			json_object_iter_init (&iter, env_members);
+			while (json_object_iter_next (&iter, &member_name, &member_node))
+			{
+				g_subprocess_launcher_setenv(subprocess_launcher, member_name, json_node_get_string(member_node), TRUE);
+    		}
+		}
+		subprocess = g_subprocess_launcher_spawnv(subprocess_launcher, (const gchar**)g_strsplit(json_object_get_string_member(cur_node, "cmd"), " ", -1),NULL);
 		if (subprocess == NULL){
 			msgwin_status_add_string("Error in process spawn");
 		}
@@ -123,6 +139,12 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 	 * http://www.scintilla.org/ScintillaDoc.html#Notifications. */
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
+	g_autoptr(GVariant) completion_capabilities = get_server_capability_for_key(client_manager->server_capabilities, "completionProvider", NULL);
+	g_autoptr(GVariant) signature_capabilities = get_server_capability_for_key(client_manager->server_capabilities, "signatureHelpProvider", NULL);
+    if(completion_capabilities == NULL && signature_capabilities == NULL){
+        msgwin_status_add_string("No editor capabilities.");
+        return ret;
+    }
 	GeanyPlugin *plugin = data;
 	switch (nt->nmhdr.code)
 	{
@@ -139,6 +161,7 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 				case '\'':
 				case '}':
 				case '=':
+				case ' ':
 					break;
 				default:
 					//msgwin_status_add("%hhu, %d", nt->ch, nt->ch);
