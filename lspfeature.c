@@ -38,6 +38,7 @@ gboolean check_capability_feature_flag(GVariant *server_capabilities, const gcha
         }
         return FALSE;
     }
+    return FALSE;
 }
 
 static
@@ -305,7 +306,7 @@ lsp_signature_cb (GObject      *object,
         }
         sci_send_command(doc->editor->sci, SCI_CALLTIPCANCEL);
         if(signatures->len > 1 ){
-            scintilla_send_message(doc->editor->sci, SCI_CALLTIPSHOW, pos, (sptr_t) signatures->str);
+            scintilla_send_message(doc->editor->sci, SCI_CALLTIPSHOW, pos-3, (sptr_t) signatures->str);
         }
         g_string_free(signatures, TRUE);
     }

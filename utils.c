@@ -26,37 +26,41 @@ const gchar *get_file_type_name(gchar *file_name){
 
 void read_lsp_config_file(GeanyData *geany_data, JsonParser *cnf_parser, gboolean is_project){
 	g_autoptr(GError) error=NULL;
-	const gchar *cnf_file =  g_build_path(G_DIR_SEPARATOR_S, geany_data->app->configdir, "plugins", CNF_FILE, NULL);
+	if(!is_project){
+		const gchar *cnf_file =  g_build_path(G_DIR_SEPARATOR_S, geany_data->app->configdir, "plugins", CNF_FILE, NULL);
+	}
+	else{
+		const gchar *cnf_file =  g_build_path(G_DIR_SEPARATOR_S, geany_data->app->project->base_path, "."CNF_FILE, NULL);
+	}
 	json_parser_load_from_file (cnf_parser, cnf_file, &error);
 	if(error != NULL){
-		msgwin_status_add("Unable to parse json for LSP: %s", error->message);
+		msgwin_status_add("LSP Unable to parse: %s", error->message);
+	}
+}
+static
+void override_each_data(JsonObject *root_obj, JsonObject *override_obj){
+	JsonObjectIter iter;
+	const gchar *member_name;
+	JsonNode *member_node;
+	json_object_iter_init (&iter, root_obj);
+	while (json_object_iter_next (&iter, &member_name, &member_node))
+	{
+		if(!json_object_has_member(override_obj, member_name) || !JSON_NODE_HOLDS_OBJECT(member_node)){
+			json_object_set_memeber(override_obj, member_name, json_object_dup_member(root_obj, member_name));
+			continue
+		}
+		override_each_data(json_node_get_object(member_node), json_object_get_object_member(override_obj, member_name));
 	}
 }
 
-void ready_lsp_json_node(GeanyData *geany_data, JsonNode *cnf_node, JsonParser *cnf_parser){
-	read_lsp_config_file(geany_data, cnf_parser, FALSE);
-	if(cnf_parser != NULL){
-		cnf_node = json_parser_get_root(cnf_parser);
+void override_cnf(GeanyData *geany_data, JsonObject *lsp_json_cnf){
+	g_autoptr(JsonParser) proj_json_parser=NULL;
+	read_lsp_config_file(geany_data, proj_json_parser, TRUE);
+	if(proj_json_parser == NULL){
+		return;
 	}
-}
-
-void override_cnf(gchar *base_path, const gchar *file_name){
-	g_autoptr(GError) error=NULL;
-	const gchar *cnf_file =  g_build_path(G_DIR_SEPARATOR_S, base_path, "."CNF_FILE, NULL);
-	//json_parser_load_from_file (cnf_parser, cnf_file, &error);
-	// JsonParser *proj_json;
-	// JsonObject *cur_cnf;
-	// JsonNode *cur_json;
-	// if(geany_data->project == NULL){
-		// return;
-	// }
-	// const gchar *proj_cnf =  g_build_path(G_DIR_SEPARATOR_S, geany_data->app->project->base_path, "."CNF_FILE, NULL);
-	// if(g_file_test(proj_cnf, G_FILE_TEST_EXISTS) && json_parser_load_from_file (proj_json, proj_cnf, NULL)){
-		// cur_json = json_parser_get_root(cnf_parser);
-		// if(!json_object_has_member(cur_json, doc->file_type->name)){
-			// return;
-		// }
-		// return json_node_get_object(json_object_get_member(lsp_json, doc->file_type->name));
-	// }
+	g_autoptr(JsonObject) proj_obj = NULL;
+	proj_obj = json_node_get_object(json_parser_get_root(proj_json_parser));
+	override_each_data(proj_obj, lsp_json_cnf);
 }
 

@@ -43,6 +43,5 @@ typedef struct {
 
 const gchar *get_file_type_name(gchar *file_name);
 void read_lsp_config_file(GeanyData *geany_data, JsonParser *cnf_parser, gboolean is_project);
-void ready_lsp_json_node(GeanyData *geany_data, JsonNode *cnf_node, JsonParser *cnf_parser);
-
+void override_cnf(GeanyData *geany_data, JsonObject *lsp_json_cnf);
 #endif

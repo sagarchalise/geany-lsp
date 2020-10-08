@@ -185,12 +185,12 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 			// break;
             //self.get_jedi_doc_and_signatures(editor, pos, text=nt_text, doc=False)
 		case SCN_DWELLSTART:
-            lsp_ask_signature_help(client_manager, doc, doc_track->uri, nt->position, 1);
             lsp_ask_detail( client_manager, doc, doc_track->uri, nt->position);
+            lsp_ask_signature_help(client_manager, doc, doc_track->uri, nt->position, 1);
 			break;
         case SCN_DWELLEND:
-			msgwin_clear_tab(MSG_MESSAGE);
             sci_send_command(editor->sci, SCI_CALLTIPCANCEL);
+			msgwin_clear_tab(MSG_MESSAGE);
             break;
         default:
 			break;
@@ -262,6 +262,29 @@ static void on_document_close(GObject *obj, GeanyDocument *doc, gpointer user_da
 	g_free(doc_track->uri);
 	g_free(doc_track);
 }
+static void destroy_everything(){
+	GHashTableIter iter;
+	gpointer key, value;
+	g_hash_table_iter_init (&iter, process_map);
+	while (g_hash_table_iter_next (&iter, &key, &value))
+	{
+		ClientManager *cm = (ClientManager *)value;
+		shutdown_lsp_client(cm->rpc_client);
+		g_object_unref(cm->server_capabilities);
+		g_object_unref(cm->rpc_client);
+		g_free(cm);
+	}
+	g_hash_table_iter_init (&iter, docs_versions);
+	while (g_hash_table_iter_next (&iter, &key, &value))
+	{
+		DocumentTracking *dt = (DocumentTracking *)value;
+		g_free(dt->uri);
+		g_free(dt);
+	}
+}
+static void on_project_open(GObject *obj, GKeyFile *config, gpointer user_data){
+	override_cnf(geany_data, lsp_json_cnf);
+}
 
 static PluginCallback demo_callbacks[] =
 {
@@ -272,7 +295,7 @@ static PluginCallback demo_callbacks[] =
 	 {"document-close", (GCallback) & on_document_close, FALSE, NULL},
 	 {"document-save", (GCallback) & on_document_save, FALSE, NULL},
 	 {"document-before-save", (GCallback) & on_document_before_save, FALSE, NULL},
-	 // {"document-reload", (GCallback) & on_document_open, FALSE, NULL},
+	 {"project-open", (GCallback) & on_project_open, FALSE, NULL},
 	 //{"document-activate", (GCallback) & on_document_activate, FALSE, NULL},
 	{ "editor-notify", (GCallback) &on_editor_notify, FALSE, NULL },
 	{ NULL, NULL, FALSE, NULL }
@@ -287,7 +310,10 @@ static gboolean demo_init(GeanyPlugin *plugin, gpointer data)
 	docs_versions = g_hash_table_new(g_direct_hash, g_direct_equal);
 	cnf_parser = json_parser_new();
 	read_lsp_config_file(geany_data, cnf_parser, FALSE);
-	cnf_node = json_parser_get_root(cnf_parser);
+	read_lsp_config_file(geany_data, cnf_parser, FALSE);
+	if(cnf_parser != NULL){
+		cnf_node = json_parser_get_root(cnf_parser);
+	}
 	if(cnf_node != NULL){
 		lsp_json_cnf = json_node_get_object(cnf_node);
 	}
@@ -363,6 +389,7 @@ static void demo_cleanup(GeanyPlugin *plugin, gpointer data)
 	g_object_unref(cnf_parser);
 	json_node_free(cnf_node);
 	json_object_unref(lsp_json_cnf);
+	destroy_everything();
 	g_hash_table_destroy(process_map);
 	g_hash_table_destroy(docs_versions);
 }

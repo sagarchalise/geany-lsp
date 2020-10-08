@@ -332,3 +332,32 @@ GVariant *get_server_capability_for_key(GVariant *server_capabilities, const gch
     }
     return g_variant_lookup_value (server_capabilities, key, gv);
 }
+static void
+lsp_client_shutdown_cb (GObject      *object,
+                            GAsyncResult *result,
+                            gpointer      user_data)
+{
+  JsonrpcClient *client = (JsonrpcClient *)object;
+  g_autoptr(GError) error = NULL;
+
+  if (jsonrpc_client_call_finish (client, result, NULL, &error)){
+    jsonrpc_client_send_notification(client, "exit", NULL, NULL, &error);
+    jsonrpc_client_close (client,
+                                NULL,
+                                &error)
+  }
+  if(error != NULL){
+    msgwin_status_add("LSP shutdown error: %s", error->message);
+  }
+}
+
+void
+shutdown_lsp_client (JsonrpcClient *rpc_client)
+{
+  jsonrpc_client_call_async (rpc_client,
+                                 "shutdown",
+                                 NULL,
+                                 NULL,
+                                 lsp_client_shutdown_cb,
+                                 NULL);
+}
