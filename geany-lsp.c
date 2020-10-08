@@ -146,30 +146,74 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
         msgwin_status_add_string("No editor capabilities.");
         return ret;
     }
+	g_auto(GStrv) completion_trigger_chars = NULL;
+    gboolean completion_success;
+	completion_success = JSONRPC_MESSAGE_PARSE (completion_capabilities,
+		"triggerCharacters", JSONRPC_MESSAGE_GET_STRV (&completion_trigger_chars)
+	);
+	g_auto(GStrv) signature_trigger_chars = NULL;
+	gboolean sig_success;
+	sig_success = JSONRPC_MESSAGE_PARSE (signature_capabilities,
+		"triggerCharacters", JSONRPC_MESSAGE_GET_STRV (&signature_trigger_chars)
+	);
+
 	GeanyPlugin *plugin = data;
+	gboolean call = FALSE;
 	switch (nt->nmhdr.code)
 	{
 		case SCN_CHARADDED:
-			/* For demonstrating purposes simply print the typed character in the status bar */
-			switch(nt->ch){
-				case '\r':
-				case '\n':
-				case '/':
-				case ')':
-				case '{':
-				case '[':
-				case '"':
-				case '\'':
-				case '}':
-				case '=':
-				case ' ':
-					break;
-				default:
-					//msgwin_status_add("%hhu, %d", nt->ch, nt->ch);
-					lsp_completion_on_doc(client_manager->rpc_client, plugin->geany_data, pos);
-					break;
-			}
+			if(completion_success){
+					for (guint i = 0; completion_trigger_chars[i]; i++)
+					{
+						const gchar *trigger = completion_trigger_chars[i];
 
+						if(nt->ch == g_utf8_get_char(trigger)){
+							call = TRUE;
+							break;
+
+						}
+					}
+			}
+			if (call){
+				lsp_completion_on_doc(client_manager->rpc_client, plugin->geany_data, pos);
+				break;
+			}
+			else{
+				if(sig_success){
+					for (guint j = 0; signature_trigger_chars[j]; j++)
+					{
+						const gchar *trigger = signature_trigger_chars[j];
+
+						if(nt->ch == g_utf8_get_char(trigger)){
+							call = TRUE;
+							break;
+						}
+					}
+				}
+				if (call){
+					lsp_ask_signature_help(client_manager, doc, doc_track->uri, pos, 2);
+					break;
+				}
+				/* For demonstrating purposes simply print the typed character in the status bar */
+				switch(nt->ch){
+					case '\r':
+					case '\n':
+					case '/':
+					case ')':
+					case '{':
+					case '[':
+					case '"':
+					case '\'':
+					case '}':
+					case '=':
+					case ' ':
+						break;
+					default:
+					//msgwin_status_add("%hhu, %d", nt->ch, nt->ch);
+						lsp_completion_on_doc(client_manager->rpc_client, plugin->geany_data, pos);
+						break;
+				}
+			}
 			break;
 		// case SCN_AUTOCCOMPLETED:
             // if (editor_find_snippet(editor, nt->text) != NULL){
