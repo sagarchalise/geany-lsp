@@ -230,10 +230,6 @@ static void on_document_save(GObject *obj, GeanyDocument *doc, gpointer user_dat
 	}
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
-	if(doc->changed){
-		//doc_track->version++;
-		lsp_doc_format(client_manager, doc, doc_track->uri);
-	}
 	lsp_doc_saved(client_manager, doc, doc_track->uri);
 }
 static void on_document_before_save(GObject *obj, GeanyDocument *doc, gpointer user_data){
@@ -243,10 +239,6 @@ static void on_document_before_save(GObject *obj, GeanyDocument *doc, gpointer u
 	}
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
-	//if(doc->changed){
-	// doc_track->version++;
-	//  lsp_doc_changed(client_manager, doc, doc_track);
-	//}
 	//lsp_doc_format(client_manager, doc, doc_track->uri);
 	lsp_doc_will_save(client_manager, doc, doc_track->uri);
 

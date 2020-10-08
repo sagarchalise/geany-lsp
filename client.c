@@ -91,6 +91,9 @@ add_diagnostics_to_cache(GVariant *params)
                                   "message", JSONRPC_MESSAGE_GET_STRING (&message)))
         continue;
 
+    if(g_str_equal(message, "") || message == NULL){
+        continue;
+    }
       // /* Optional Fields */
       JSONRPC_MESSAGE_PARSE (value, "severity", JSONRPC_MESSAGE_GET_INT64 (&severity));
       JSONRPC_MESSAGE_PARSE (value, "source", JSONRPC_MESSAGE_GET_STRING (&source));
@@ -332,6 +335,20 @@ GVariant *get_server_capability_for_key(GVariant *server_capabilities, const gch
     }
     return g_variant_lookup_value (server_capabilities, key, gv);
 }
+gboolean check_by_flag_on_server(GVariant *server_capabilities, const gchar *key){
+    g_autoptr(GVariant) flagval = get_server_capability_for_key(server_capabilities, key, NULL);
+    if(flagval == NULL){
+        return FALSE;
+    }
+    if(g_variant_is_of_type(flagval, G_VARIANT_TYPE_BOOLEAN)){
+        return g_variant_get_boolean(flagval);
+    }
+    gboolean flag;
+    if(!JSONRPC_MESSAGE_PARSE(flagval, "workDoneProgress",  JSONRPC_MESSAGE_GET_BOOLEAN(&flag))){
+        return FALSE;
+    };
+    return flag;
+}
 static void
 lsp_client_shutdown_cb (GObject      *object,
                             GAsyncResult *result,
@@ -342,9 +359,7 @@ lsp_client_shutdown_cb (GObject      *object,
 
   if (jsonrpc_client_call_finish (client, result, NULL, &error)){
     jsonrpc_client_send_notification(client, "exit", NULL, NULL, &error);
-    jsonrpc_client_close (client,
-                                NULL,
-                                &error)
+    jsonrpc_client_close (client, NULL, &error);
   }
   if(error != NULL){
     msgwin_status_add("LSP shutdown error: %s", error->message);

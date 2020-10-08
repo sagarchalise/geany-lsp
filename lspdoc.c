@@ -267,7 +267,7 @@ lsp_format_doc_cb (GObject      *object,
 }
 
 void lsp_doc_format(ClientManager *client_manager, GeanyDocument *doc, gchar *uri){
-    if(!check_text_capability_flag(client_manager->server_capabilities, DOC_FORMATTING)){
+    if(!check_by_flag_on_server(client_manager->server_capabilities, DOC_FORMATTING)){
         msgwin_status_add_string("LSP no formatting support.");
         return;
     }

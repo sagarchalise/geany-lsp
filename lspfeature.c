@@ -83,6 +83,9 @@ void lsp_completion_cb(GObject      *object,
             if(!g_variant_lookup (node, "label", "&s", &label)){
             continue;
             }
+            if(g_str_equal(label, "") || label == NULL){
+                continue;
+            }
             if(word_at_pos != NULL){
                 // snippet = editor_find_snippet(doc->editor, word_at_pos);
                 // if(count == 0 && snippet != NULL){
@@ -233,7 +236,10 @@ lsp_detail_cb (GObject  *object, GAsyncResult *result, gpointer user_data)
             "{",
                 "value", JSONRPC_MESSAGE_GET_STRING (&message),
             "}") ){
-        msgwin_msg_add(COLOR_BLACK, sci_get_line_from_position(doc->editor->sci, pos), doc, "Doc:\n\n%s", message );
+        if(g_str_equal(message, "") || message == NULL){
+            return;
+        }
+        msgwin_msg_add(COLOR_BLACK, sci_get_line_from_position(doc->editor->sci, pos), doc, "Doc:\n%s", message );
         msgwin_switch_tab(MSG_MESSAGE, FALSE);
     }
 }
@@ -297,6 +303,9 @@ lsp_signature_cb (GObject      *object,
             const gchar *label;
             if(!g_variant_lookup (node, "label", "&s", &label)){
             continue;
+            }
+            if(g_str_equal(label, "") || label == NULL){
+                continue;
             }
             g_string_append(signatures, label);
             if (count > 0){

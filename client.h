@@ -38,6 +38,7 @@ typedef struct ClientManager{
 
 void initialize_lsp_client(ClientManager *client_manager, GIOStream *iostream, GeanyData *geany_data);
 GVariant *get_server_capability_for_key(GVariant *server_capabilities, const gchar *key, const GVariantType *gv);
-void shutdown_lsp_client (JsonrpcClient *rpc_client)
+void shutdown_lsp_client (JsonrpcClient *rpc_client);
+gboolean check_by_flag_on_server(GVariant *server_capabilities, const gchar *key);
 
 #endif
