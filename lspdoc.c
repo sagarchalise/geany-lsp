@@ -223,7 +223,6 @@ lsp_format_doc_cb (GObject      *object,
     }
   GVariantIter iter;
     g_variant_iter_init (&iter, reply);
-
   while (g_variant_iter_loop (&iter, "v", &reply))
     {
       const gchar *new_text = NULL;
@@ -244,28 +243,35 @@ lsp_format_doc_cb (GObject      *object,
         "}",
         "newText", JSONRPC_MESSAGE_GET_STRING (&new_text)
       );
-      if (!success)
-        {
-        continue;
+      if((end.line - begin.line) < 5){
+        success = FALSE;
+        break;
+      }
+    if (!success)
+    {
+        break;
+    }
+    if(new_text != NULL){
+        gint line_cnt = sci_get_line_count(doc->editor->sci);
+        if(begin.line != 1 && begin.column != 0) {
+            return;
         }
-        if(new_text != NULL){
-            gint start_pos = sci_get_position_from_line(doc->editor->sci, begin.line) + begin.column;
-            gint end_pos = sci_get_position_from_line(doc->editor->sci, end.line) + end.column;
-            sci_set_selection_start(doc->editor->sci, start_pos);
-            sci_set_selection_end(doc->editor->sci, end_pos);
-            msgwin_status_add("%d, %d", start_pos, end_pos);
-            // gint line_cnt = sci_get_line_count(doc->editor->sci);
-            // gint cur_line = sci_get_current_line(doc->editor->sci);
-            // sci_set_text(doc->editor->sci, new_text);
-            // gint new_line_cnt = sci_get_line_count(doc->editor->sci);
-            // sci_set_current_position(doc->editor->sci, sci_get_position_from_line(doc->editor->sci, (cur_line + (new_line_cnt - line_cnt))), TRUE);
-        }
+        gint cur_line = sci_get_current_line(doc->editor->sci);
+        sci_set_text(doc->editor->sci, new_text);
+        gint new_line_cnt = sci_get_line_count(doc->editor->sci);
+        sci_set_current_position(doc->editor->sci, sci_get_position_from_line(doc->editor->sci, (cur_line + (new_line_cnt - line_cnt))), TRUE);
+        document_save_file(doc, TRUE);
+    }
+    break;
     }
 }
 
 void lsp_doc_format(ClientManager *client_manager, GeanyDocument *doc, gchar *uri){
     if(!check_text_capability_flag(client_manager->server_capabilities, DOC_FORMATTING)){
         msgwin_status_add_string("LSP no formatting support.");
+        return;
+    }
+    if(sci_get_line_count(doc->editor->sci) < 5){
         return;
     }
     const GeanyIndentPrefs *indent_prefs = editor_get_indent_prefs(doc->editor);

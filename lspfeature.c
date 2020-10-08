@@ -233,6 +233,7 @@ lsp_detail_cb (GObject  *object, GAsyncResult *result, gpointer user_data)
                 "value", JSONRPC_MESSAGE_GET_STRING (&message),
             "}") ){
         msgwin_msg_add(COLOR_BLACK, sci_get_line_from_position(doc->editor->sci, pos), doc, "Doc:\n\n%s", message );
+        msgwin_switch_tab(MSG_MESSAGE, FALSE);
     }
 }
 void lsp_ask_detail(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos){
@@ -311,7 +312,7 @@ lsp_signature_cb (GObject      *object,
 }
 void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos, gint kind){
     if(!check_capability_feature_flag(client_manager->server_capabilities, "signatureHelpProvider", NULL)){
-        msgwin_status_add("LSP no hover feature.");
+        msgwin_status_add("LSP no signature feature.");
         return;
     }
     g_autoptr(GVariant) params = NULL;
