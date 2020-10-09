@@ -36,5 +36,6 @@ void lsp_doc_saved(ClientManager *client_manager, GeanyDocument *doc, gchar *uri
 void lsp_doc_will_save(ClientManager *client_manager, GeanyDocument *doc, gchar *uri);
 void lsp_doc_changed(ClientManager *client_manager, GeanyDocument *doc, DocumentTracking *doc_track);
 void lsp_doc_format(ClientManager *client_manager, GeanyDocument *doc, gchar *uri);
+void lsp_doc_changed_and_save(ClientManager *client_manager, GeanyDocument *doc, DocumentTracking *doc_track);
 
 #endif

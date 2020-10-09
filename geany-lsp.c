@@ -47,6 +47,7 @@ static gboolean
 has_client_in_map (GeanyDocument *doc, gpointer user_data)
 {
 	if(!DOC_VALID(doc)){ return FALSE; }
+	els
 	const gchar *file_type_name = get_file_type_name(doc->file_type->name);
 	if(!json_object_has_member(lsp_json_cnf, file_type_name)){
         return FALSE;
@@ -274,17 +275,20 @@ static void on_document_save(GObject *obj, GeanyDocument *doc, gpointer user_dat
 	}
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
+	lsp_doc_will_save(client_manager, doc, doc_track->uri);
 	lsp_doc_saved(client_manager, doc, doc_track->uri);
+	lsp_doc_format(client_manager, doc, doc_track->uri);
 }
 static void on_document_before_save(GObject *obj, GeanyDocument *doc, gpointer user_data){
-	if(!has_client_in_map(doc, user_data)){
+	if(!has_client_in_map(doc, user_data) && !doc->changed){
 		//msgwin_status_add("No LSP Server for %s file type", get_file_type_name(doc->file_type->name));
         return;
 	}
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
-	//lsp_doc_format(client_manager, doc, doc_track->uri);
-	lsp_doc_will_save(client_manager, doc, doc_track->uri);
+	doc_track->version += 1;
+	msgwin_status_add("heelo");
+	lsp_doc_changed(client_manager, doc, doc_track);
 
 }
 static void on_document_close(GObject *obj, GeanyDocument *doc, gpointer user_data){

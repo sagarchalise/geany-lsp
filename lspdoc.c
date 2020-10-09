@@ -29,6 +29,7 @@
 #define DOC_SYNC "textDocumentSync"
 #define DOC_FORMATTING "documentFormattingProvider"
 
+
 static
 gboolean check_text_capability_flag(GVariant *server_capabilities, const gchar *key){
     g_autoptr(GVariant) capabilities = get_server_capability_for_key(server_capabilities, DOC_SYNC, NULL);
@@ -158,23 +159,23 @@ lsp_doc_saved (ClientManager *client_manager, GeanyDocument *doc, gchar *uri)
     }
     msgwin_status_add("LSP calling didSave. Including text: %d", include_text);
     g_autoptr(GVariant) params = NULL;
-    if (include_text){
-        g_autofree gchar *content = NULL;
-        content = sci_get_contents(doc->editor->sci, -1);
-        params = JSONRPC_MESSAGE_NEW (
-            "textDocument", "{",
-                "uri", JSONRPC_MESSAGE_PUT_STRING (uri),
-                "text", JSONRPC_MESSAGE_PUT_STRING (content),
-            "}"
-        );
-    }
-    else{
-        params = JSONRPC_MESSAGE_NEW (
-            "textDocument", "{",
-                "uri", JSONRPC_MESSAGE_PUT_STRING (uri),
-            "}"
-        );
-    }
+    //if (include_text){
+    g_autofree gchar *content = NULL;
+    content = sci_get_contents(doc->editor->sci, -1);
+    params = JSONRPC_MESSAGE_NEW (
+        "textDocument", "{",
+            "uri", JSONRPC_MESSAGE_PUT_STRING (uri),
+            "text", JSONRPC_MESSAGE_PUT_STRING (content),
+        "}"
+    );
+    // }
+    // else{
+        // params = JSONRPC_MESSAGE_NEW (
+            // "textDocument", "{",
+                // "uri", JSONRPC_MESSAGE_PUT_STRING (uri),
+            // "}"
+        // );
+    // }
     jsonrpc_client_send_notification_async (client_manager->rpc_client,
                                           "textDocument/didSave",
                                           params,
@@ -243,26 +244,22 @@ lsp_format_doc_cb (GObject      *object,
         "}",
         "newText", JSONRPC_MESSAGE_GET_STRING (&new_text)
       );
-      if((end.line - begin.line) < 5){
-        success = FALSE;
+      if(!success){
         break;
       }
-    if (!success)
-    {
-        break;
-    }
     if(new_text != NULL){
-        gint line_cnt = sci_get_line_count(doc->editor->sci);
-        if(begin.line != 1 && begin.column != 0) {
-            return;
+        gint start_pos = sci_get_position_from_line(doc->editor->sci, begin.line) + begin.column;
+        gint end_pos = sci_get_line_end_position(doc->editor->sci, end.line) + end.column;
+        g_autofree gchar *range = sci_get_contents_range(doc->editor->sci, start_pos, end_pos);
+        //msgwin_compiler_add(COLOR_BLACK, "%s, %d", range, sci_get_line_from_position(doc->editor->sci, 0));
+        //msgwin_compiler_add(COLOR_BLACK, "%s, %d, %d, %d, %d", new_text, begin.line, begin.column, end.line, end.column);
+        // gint line_cnt = sci_get_line_count(doc->editor->sci);
+        // gint cur_line = sci_get_current_line(doc->editor->sci);
+            // sci_set_text(doc->editor->sci, new_text);
+            // gint new_line_cnt = sci_get_line_count(doc->editor->sci);
+            // sci_set_current_position(doc->editor->sci, sci_get_position_from_line(doc->editor->sci, (cur_line + (new_line_cnt - line_cnt))), TRUE);
+            // document_save_file(doc, TRUE);
         }
-        gint cur_line = sci_get_current_line(doc->editor->sci);
-        sci_set_text(doc->editor->sci, new_text);
-        gint new_line_cnt = sci_get_line_count(doc->editor->sci);
-        sci_set_current_position(doc->editor->sci, sci_get_position_from_line(doc->editor->sci, (cur_line + (new_line_cnt - line_cnt))), TRUE);
-        document_save_file(doc, TRUE);
-    }
-    break;
     }
 }
 
