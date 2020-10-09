@@ -311,6 +311,7 @@ lsp_signature_cb (GObject      *object,
         sci_send_command(doc->editor->sci, SCI_CALLTIPCANCEL);
         if(signatures->len > 1 ){
             scintilla_send_message(doc->editor->sci, SCI_CALLTIPSHOW, (tp->trigger != TRIGGER_CHARACTER)?scintilla_send_message(doc->editor->sci, SCI_WORDSTARTPOSITION, tp->pos, TRUE):tp->pos, (sptr_t) signatures->str);
+            scintilla_send_message(doc->editor->sci, SCI_CALLTIPSETHLT, 0, signatures->len);
         }
         g_string_free(signatures, TRUE);
     }
@@ -323,7 +324,6 @@ void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, g
     g_autoptr(GVariant) params = NULL;
     ScintillaObject *sci;
     sci = doc->editor->sci;
-    gint kind;
     gint line = sci_get_line_from_position(sci, tp->pos);
     gint column = sci_get_col_from_position(sci, tp->pos);
     params = JSONRPC_MESSAGE_NEW (
@@ -335,7 +335,7 @@ void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, g
       "character", JSONRPC_MESSAGE_PUT_INT32 (column),
     "}",
     "context", "{",
-        "triggerKind", JSONRPC_MESSAGE_PUT_INT32 (kind),
+        "triggerKind", JSONRPC_MESSAGE_PUT_INT32 (tp->trigger),
     "}"
   );
   jsonrpc_client_call_async (client_manager->rpc_client,
@@ -343,6 +343,6 @@ void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, g
                              params,
                              NULL,
                              lsp_signature_cb,
-                             GINT_TO_POINTER(tp));
+                             tp);
 
 }

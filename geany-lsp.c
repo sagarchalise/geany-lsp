@@ -178,9 +178,9 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 			}
 			if(tp->trigger == TRIGGER_CHARACTER){
 				lsp_ask_signature_help(client_manager, doc, doc_track->uri, tp);
-				break;
 			}
-			if(completion_success){
+			else{
+				if(completion_success){
 					for (guint i = 0; completion_trigger_chars[i]; i++)
 					{
 						const gchar *trigger = completion_trigger_chars[i];
@@ -191,30 +191,29 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 
 						}
 					}
-			}
-			if(tp->trigger < 0){
-			/* For demonstrating purposes simply print the typed character in the status bar */
-				switch(nt->ch){
-					case '\r':
-					case '\n':
-					case '/':
-					case ')':
-					case '{':
-					case '[':
-					case '"':
-					case '\'':
-					case '}':
-					case '=':
-					case ' ':
-						break;
-					default:
-					//msgwin_status_add("%hhu, %d", nt->ch, nt->ch);
-						tp->trigger = TRIGGER_INVOKED;
-						break;
 				}
-			}
-			if (tp->trigger > 0){
-				lsp_completion_on_doc(client_manager, doc, doc_track->uri, tp);
+				if(tp->trigger != TRIGGER_CHARACTER){
+					switch(nt->ch){
+						case '\r':
+						case '\n':
+						case '/':
+						case ')':
+						case '{':
+						case '[':
+						case '"':
+						case '\'':
+						case '}':
+						case '=':
+						case ' ':
+							break;
+						default:
+							tp->trigger = TRIGGER_INVOKED;
+							break;
+					}
+				}
+				if (tp->trigger > 0){
+					lsp_completion_on_doc(client_manager, doc, doc_track->uri, tp);
+				}
 			}
 			break;
 		// case SCN_AUTOCCOMPLETED:
@@ -233,7 +232,7 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 		case SCN_DWELLSTART:
 			tp->trigger = TRIGGER_CHANGE;
             tp->pos = nt->position;
-            lsp_ask_detail( client_manager, doc, doc_track->uri, tp->pos);
+			lsp_ask_detail( client_manager, doc, doc_track->uri, tp->pos);
             lsp_ask_signature_help(client_manager, doc, doc_track->uri, tp);
 			break;
         case SCN_DWELLEND:
@@ -284,10 +283,13 @@ static void on_document_save(GObject *obj, GeanyDocument *doc, gpointer user_dat
 	//lsp_doc_format(client_manager, doc, doc_track->uri);
 }
 static void on_document_before_save(GObject *obj, GeanyDocument *doc, gpointer user_data){
-	if(!has_client_in_map(doc, user_data) && !doc->changed){
+	if(!has_client_in_map(doc, user_data)){
 		//msgwin_status_add("No LSP Server for %s file type", get_file_type_name(doc->file_type->name));
         return;
 	}
+        else if(!doc->changed){
+            return;
+        }
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
 	doc_track->version += 1;
