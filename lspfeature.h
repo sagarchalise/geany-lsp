@@ -27,11 +27,20 @@
 #include "client.h"
 
 extern GeanyData *geany_data;
+typedef struct {
+    gint pos;
+    gint trigger;
+} TriggerWithPos;
 
+typedef enum{
+    TRIGGER_INVOKED = 1,
+    TRIGGER_CHARACTER = 2,
+    TRIGGER_CHANGE = 3,
+} TriggerKind;
 
-void lsp_completion_on_doc(JsonrpcClient *rpc_client, GeanyData *geany_data, gint pos);
+void lsp_completion_on_doc (ClientManager *client_manager, GeanyDocument *doc, gchar *uri, TriggerWithPos *tp);
 void lsp_completion_ask_resolve(JsonrpcClient *rpc_client, GeanyData *geany_data, gchar *text);
 void lsp_ask_detail(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos);
-void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos, gint kind);
+void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, TriggerWithPos *tp);
 
 #endif

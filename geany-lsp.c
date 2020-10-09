@@ -32,8 +32,8 @@
 
 #include "utils.h"
 #include "client.h"
-#include "lspdoc.h"
 #include "lspfeature.h"
+#include "lspdoc.h"
 #include <Scintilla.h>	/* for the SCNotification struct */
 
 GeanyData *geany_data;
@@ -47,7 +47,6 @@ static gboolean
 has_client_in_map (GeanyDocument *doc, gpointer user_data)
 {
 	if(!DOC_VALID(doc)){ return FALSE; }
-	els
 	const gchar *file_type_name = get_file_type_name(doc->file_type->name);
 	if(!json_object_has_member(lsp_json_cnf, file_type_name)){
         return FALSE;
@@ -160,42 +159,41 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 
 	GeanyPlugin *plugin = data;
 	gboolean call = FALSE;
+	TriggerWithPos *tp = g_new0(TriggerWithPos, 1);
+	tp->trigger = -5;
+	tp->pos = pos;
 	switch (nt->nmhdr.code)
 	{
 		case SCN_CHARADDED:
+			if(sig_success){
+				for (guint j = 0; signature_trigger_chars[j]; j++)
+				{
+					const gchar *trigger = signature_trigger_chars[j];
+
+					if(nt->ch == g_utf8_get_char(trigger)){
+						tp->trigger = TRIGGER_CHARACTER;
+						break;
+					}
+				}
+			}
+			if(tp->trigger == TRIGGER_CHARACTER){
+				lsp_ask_signature_help(client_manager, doc, doc_track->uri, tp);
+				break;
+			}
 			if(completion_success){
 					for (guint i = 0; completion_trigger_chars[i]; i++)
 					{
 						const gchar *trigger = completion_trigger_chars[i];
 
 						if(nt->ch == g_utf8_get_char(trigger)){
-							call = TRUE;
+							tp->trigger = TRIGGER_CHARACTER;
 							break;
 
 						}
 					}
 			}
-			if (call){
-				lsp_completion_on_doc(client_manager->rpc_client, plugin->geany_data, pos);
-				break;
-			}
-			else{
-				if(sig_success){
-					for (guint j = 0; signature_trigger_chars[j]; j++)
-					{
-						const gchar *trigger = signature_trigger_chars[j];
-
-						if(nt->ch == g_utf8_get_char(trigger)){
-							call = TRUE;
-							break;
-						}
-					}
-				}
-				if (call){
-					lsp_ask_signature_help(client_manager, doc, doc_track->uri, pos, 2);
-					break;
-				}
-				/* For demonstrating purposes simply print the typed character in the status bar */
+			if(tp->trigger < 0){
+			/* For demonstrating purposes simply print the typed character in the status bar */
 				switch(nt->ch){
 					case '\r':
 					case '\n':
@@ -211,9 +209,12 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 						break;
 					default:
 					//msgwin_status_add("%hhu, %d", nt->ch, nt->ch);
-						lsp_completion_on_doc(client_manager->rpc_client, plugin->geany_data, pos);
+						tp->trigger = TRIGGER_INVOKED;
 						break;
 				}
+			}
+			if (tp->trigger > 0){
+				lsp_completion_on_doc(client_manager, doc, doc_track->uri, tp);
 			}
 			break;
 		// case SCN_AUTOCCOMPLETED:
@@ -230,16 +231,19 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 			// break;
             //self.get_jedi_doc_and_signatures(editor, pos, text=nt_text, doc=False)
 		case SCN_DWELLSTART:
-            lsp_ask_detail( client_manager, doc, doc_track->uri, nt->position);
-            lsp_ask_signature_help(client_manager, doc, doc_track->uri, nt->position, 1);
+			tp->trigger = TRIGGER_CHANGE;
+            tp->pos = nt->position;
+            lsp_ask_detail( client_manager, doc, doc_track->uri, tp->pos);
+            lsp_ask_signature_help(client_manager, doc, doc_track->uri, tp);
 			break;
         case SCN_DWELLEND:
             sci_send_command(editor->sci, SCI_CALLTIPCANCEL);
-			msgwin_clear_tab(MSG_MESSAGE);
+			msgwin_clear_tab(MSG_COMPILER);
             break;
         default:
 			break;
 		}
+	g_free(tp);
 	return ret;
 }
 
@@ -277,7 +281,7 @@ static void on_document_save(GObject *obj, GeanyDocument *doc, gpointer user_dat
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
 	lsp_doc_will_save(client_manager, doc, doc_track->uri);
 	lsp_doc_saved(client_manager, doc, doc_track->uri);
-	lsp_doc_format(client_manager, doc, doc_track->uri);
+	//lsp_doc_format(client_manager, doc, doc_track->uri);
 }
 static void on_document_before_save(GObject *obj, GeanyDocument *doc, gpointer user_data){
 	if(!has_client_in_map(doc, user_data) && !doc->changed){

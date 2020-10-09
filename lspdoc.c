@@ -250,7 +250,7 @@ lsp_format_doc_cb (GObject      *object,
     if(new_text != NULL){
         gint start_pos = sci_get_position_from_line(doc->editor->sci, begin.line) + begin.column;
         gint end_pos = sci_get_line_end_position(doc->editor->sci, end.line) + end.column;
-        g_autofree gchar *range = sci_get_contents_range(doc->editor->sci, start_pos, end_pos);
+        //g_autofree gchar *range = sci_get_contents_range(doc->editor->sci, start_pos, end_pos);
         //msgwin_compiler_add(COLOR_BLACK, "%s, %d", range, sci_get_line_from_position(doc->editor->sci, 0));
         //msgwin_compiler_add(COLOR_BLACK, "%s, %d, %d, %d, %d", new_text, begin.line, begin.column, end.line, end.column);
         // gint line_cnt = sci_get_line_count(doc->editor->sci);
@@ -266,9 +266,6 @@ lsp_format_doc_cb (GObject      *object,
 void lsp_doc_format(ClientManager *client_manager, GeanyDocument *doc, gchar *uri){
     if(!check_by_flag_on_server(client_manager->server_capabilities, DOC_FORMATTING)){
         msgwin_status_add_string("LSP no formatting support.");
-        return;
-    }
-    if(sci_get_line_count(doc->editor->sci) < 5){
         return;
     }
     const GeanyIndentPrefs *indent_prefs = editor_get_indent_prefs(doc->editor);
