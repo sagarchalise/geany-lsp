@@ -250,6 +250,8 @@ lsp_format_doc_cb (GObject      *object,
     if(new_text != NULL){
         gint start_pos = sci_get_position_from_line(doc->editor->sci, begin.line) + begin.column;
         gint end_pos = sci_get_line_end_position(doc->editor->sci, end.line) + end.column;
+        msgwin_status_add("%d, %d", sci_get_col_from_position(doc->editor->sci, 0), sci_get_col_from_position(doc->editor->sci, 1));
+        //TODO: sort out what to do on whole doc changes.
         //g_autofree gchar *range = sci_get_contents_range(doc->editor->sci, start_pos, end_pos);
         //msgwin_compiler_add(COLOR_BLACK, "%s, %d", range, sci_get_line_from_position(doc->editor->sci, 0));
         //msgwin_compiler_add(COLOR_BLACK, "%s, %d, %d, %d, %d", new_text, begin.line, begin.column, end.line, end.column);

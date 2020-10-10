@@ -57,8 +57,7 @@ void lsp_completion_cb(GObject      *object,
       msgwin_status_add("Failed to run completions: %s", error->message);
       return;
     }
-    gint pos = sci_get_current_position(doc->editor->sci);
-    g_autofree gchar *word_at_pos = editor_get_word_at_pos(doc->editor, pos, NULL);
+    g_autofree gchar *word_at_pos = editor_get_word_at_pos(doc->editor, tp->pos, NULL);
     gint rootlen = 0;
     if(word_at_pos != NULL){
         rootlen = strlen(word_at_pos);
@@ -98,7 +97,7 @@ void lsp_completion_cb(GObject      *object,
             if (count > 0){
                 g_string_append_c(words, '\n');
             }
-            if (count == geany_data->editor_prefs->autocompletion_max_entries)
+            if (words->len == geany_data->editor_prefs->autocompletion_max_entries)
 			{
 				g_string_append(words, "...");
 				break;
@@ -121,7 +120,11 @@ void lsp_completion_cb(GObject      *object,
 
 
         }
-
+        g_free(tp);
+    if(words->len == 0){
+        g_string_free(words, TRUE);
+        return;
+    }
     //msgwin_clear_tab(MSG_COMPILER);
    /* From Geany */
 	/* hide autocompletion if only option is already typed */
@@ -133,10 +136,10 @@ void lsp_completion_cb(GObject      *object,
 		return;
 	}
     msgwin_compiler_add_string(COLOR_BLACK, words->str);
-    // if(scintilla_send_message(doc->editor->sci, SCI_AUTOCACTIVE, 0, 0)){
-        // sci_send_command(doc->editor->sci, SCI_AUTOCCANCEL);
-    // }
-	//scintilla_send_message(doc->editor->sci, SCI_AUTOCSHOW, rootlen, (sptr_t) words->str);
+    if(scintilla_send_message(doc->editor->sci, SCI_AUTOCACTIVE, 0, 0)){
+        sci_send_command(doc->editor->sci, SCI_AUTOCCANCEL);
+    }
+	scintilla_send_message(doc->editor->sci, SCI_AUTOCSHOW, rootlen, (sptr_t) words->str);
     g_string_free(words, TRUE);
     }
 }
@@ -315,6 +318,7 @@ lsp_signature_cb (GObject      *object,
         }
         g_string_free(signatures, TRUE);
     }
+    g_free(tp);
 }
 void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, TriggerWithPos *tp){
     if(!check_capability_feature_flag(client_manager->server_capabilities, "signatureHelpProvider", NULL)){

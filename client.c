@@ -30,14 +30,13 @@ enum {
   SEVERITY_HINT        = 4,
 };
 
-gboolean
-lsp_client_handle_call (JsonrpcClient *self,
+
+gboolean lsp_client_handle_call (JsonrpcClient *self,
                gchar         *method,
                GVariant      *id,
                GVariant      *params,
                gpointer       user_data){
                msgwin_status_add("Handle: %s", method);
-               //msgwin_status_add_string(g_variant_get_string (params, NULL));
                return TRUE;
                }
 
@@ -193,8 +192,7 @@ void initialize_lsp_client(ClientManager *client_manager, GIOStream *iostream, G
                 "didSave", JSONRPC_MESSAGE_PUT_BOOLEAN (TRUE),
             "}",
             "formatting","{", "dynamicRegistration", JSONRPC_MESSAGE_PUT_BOOLEAN (TRUE), "}",
-            "rangeFormatting", JSONRPC_MESSAGE_PUT_BOOLEAN (FALSE),
-            "onTypeFormatting", JSONRPC_MESSAGE_PUT_BOOLEAN (FALSE),
+            "rangeFormatting", "{", "dynamicRegistration", JSONRPC_MESSAGE_PUT_BOOLEAN (TRUE), "}",
             "hover", "{",
                 "dynamicRegistration", JSONRPC_MESSAGE_PUT_BOOLEAN (TRUE),
                 "contentFormat", "[", "plaintext", "]",
@@ -212,9 +210,6 @@ void initialize_lsp_client(ClientManager *client_manager, GIOStream *iostream, G
                 "tagSupport", JSONRPC_MESSAGE_PUT_BOOLEAN (FALSE),
             "}",
         "}",
-        "workspace", "{",
-            "applyEdit", JSONRPC_MESSAGE_PUT_BOOLEAN (TRUE),
-            "configuration", JSONRPC_MESSAGE_PUT_BOOLEAN (TRUE),
         "doumentSymbol", "{",
           "SymbolKind", "{",
             "valueSet", "[",
@@ -247,7 +242,6 @@ void initialize_lsp_client(ClientManager *client_manager, GIOStream *iostream, G
             "]",
           "}",
         "}",
-      "}",
         "completion", "{",
           "contextSupport", JSONRPC_MESSAGE_PUT_BOOLEAN (TRUE),
           "completionItem", "{",
@@ -287,7 +281,6 @@ void initialize_lsp_client(ClientManager *client_manager, GIOStream *iostream, G
             "]",
           "}",
         "}",
-      "}",
       "window", "{",
         "workDoneProgress", JSONRPC_MESSAGE_PUT_BOOLEAN (TRUE),
       "}",

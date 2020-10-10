@@ -42,6 +42,7 @@ JsonParser *cnf_parser;
 JsonNode *cnf_node;
 GHashTable *process_map;
 GHashTable *docs_versions;
+GMutex mutex;
 
 static gboolean
 has_client_in_map (GeanyDocument *doc, gpointer user_data)
@@ -51,17 +52,25 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 	if(!json_object_has_member(lsp_json_cnf, file_type_name)){
         return FALSE;
      }
-	ClientManager *client_manager;
+        if(!g_mutex_trylock(&mutex)){
+            return FALSE;
+        }
+    ClientManager *client_manager;
 	if(g_hash_table_contains(process_map, file_type_name)){
 		client_manager = g_hash_table_lookup(process_map, file_type_name);
 	}
 	else{
-		JsonObject *cur_node = json_object_get_object_member(lsp_json_cnf, file_type_name);
+		JsonObject *cur_node = get_child_node_if_not_disabled(lsp_json_cnf, file_type_name);
+		if(cur_node == NULL){
+            g_mutex_unlock(&mutex);
+			return FALSE;
+		}
 		gboolean only_project = FALSE;
 		if(json_object_has_member(cur_node, "only_project")){
 			only_project = json_object_get_boolean_member(cur_node, "only_project");
 		}
 		if(only_project && geany_data->app->project == NULL){
+                       g_mutex_unlock(&mutex);
 			return FALSE;
 		}
 		JsonObject *env_members = NULL;
@@ -102,14 +111,17 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 			}
 		}
     }
+    gboolean ret = FALSE;
     if(client_manager->rpc_client != NULL){
 		g_hash_table_insert(process_map, file_type_name, client_manager);
-		return TRUE;
+		ret = TRUE;
 	}
 	else{
 		g_hash_table_remove(process_map, file_type_name);
-		return FALSE;
 	}
+
+                       g_mutex_unlock(&mutex);
+	return ret;
 }
 static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 								 SCNotification *nt, gpointer data)
@@ -158,7 +170,6 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 	);
 
 	GeanyPlugin *plugin = data;
-	gboolean call = FALSE;
 	TriggerWithPos *tp = g_new0(TriggerWithPos, 1);
 	tp->trigger = -5;
 	tp->pos = pos;
@@ -214,6 +225,9 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 				if (tp->trigger > 0){
 					lsp_completion_on_doc(client_manager, doc, doc_track->uri, tp);
 				}
+				else{
+					g_free(tp);
+				}
 			}
 			break;
 		// case SCN_AUTOCCOMPLETED:
@@ -233,16 +247,17 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 			tp->trigger = TRIGGER_CHANGE;
             tp->pos = nt->position;
 			lsp_ask_detail( client_manager, doc, doc_track->uri, tp->pos);
-            lsp_ask_signature_help(client_manager, doc, doc_track->uri, tp);
+                        lsp_ask_signature_help(client_manager, doc, doc_track->uri, tp);
 			break;
         case SCN_DWELLEND:
+			g_free(tp);
             sci_send_command(editor->sci, SCI_CALLTIPCANCEL);
 			msgwin_clear_tab(MSG_COMPILER);
             break;
         default:
-			break;
+			g_free(tp);
+            break;
 		}
-	g_free(tp);
 	return ret;
 }
 
@@ -372,6 +387,7 @@ static gboolean demo_init(GeanyPlugin *plugin, gpointer data)
 		}
 	}
 	geany_plugin_set_data(plugin, plugin, NULL);
+
 	return TRUE;
 }
 
