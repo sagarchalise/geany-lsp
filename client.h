@@ -31,14 +31,22 @@ extern GeanyData *geany_data;
 
 typedef struct ClientManager{
     JsonrpcClient *rpc_client;
-    GVariant *server_capabilities;
-    //GVariant *client_capabilities;
-    //GVariant *initialization_options;
+    GVariant *config;
+    GSubprocessLauncher *launcher;
+    GSubprocess *process;
+    GIOStream *iostream;
+    JsonNode *server_capabilities;
 } ClientManager;
 
-void initialize_lsp_client(ClientManager *client_manager, GIOStream *iostream, GeanyData *geany_data);
+
+typedef struct {
+    gint64 line;
+    gint64 column;
+} Position;
+
+void initialize_lsp_client(ClientManager *client_manager, GIOStream *iostream, gchar *root_uri, gchar *root_path, GVariant *initialization_options);
 GVariant *get_server_capability_for_key(GVariant *server_capabilities, const gchar *key, const GVariantType *gv);
-void shutdown_lsp_client (JsonrpcClient *rpc_client);
+void shutdown_lsp_client (ClientManager *client_manager);
 gboolean check_by_flag_on_server(GVariant *server_capabilities, const gchar *key);
 
 #endif

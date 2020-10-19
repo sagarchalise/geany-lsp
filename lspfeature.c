@@ -26,8 +26,8 @@ static
 gboolean check_capability_feature_flag(GVariant *server_capabilities, const gchar *root_key, const gchar *key){
     g_autoptr(GVariant) capabilities = get_server_capability_for_key(server_capabilities, root_key, NULL);
     if(capabilities == NULL){
+        return TRUE;
         msgwin_status_add("No capabilities for %s.", key);
-        return FALSE;
     }
     if(key == NULL){
         if(g_variant_is_of_type(capabilities, G_VARIANT_TYPE_BOOLEAN)){
@@ -47,8 +47,7 @@ void lsp_completion_cb(GObject      *object,
                                          gpointer      user_data)
 {
     JsonrpcClient *rpc_client = (JsonrpcClient *)object;
-    GeanyDocument *doc = document_get_current();
-    TriggerWithPos *tp = user_data;
+    DocumentTracking *doc_track = user_data;
     g_autoptr(GError) error = NULL;
   g_autoptr(GVariant) reply = NULL;
   if (!jsonrpc_client_call_finish (rpc_client, result, &reply, &error))
@@ -57,142 +56,123 @@ void lsp_completion_cb(GObject      *object,
       msgwin_status_add("Failed to run completions: %s", error->message);
       return;
     }
-    g_autofree gchar *word_at_pos = editor_get_word_at_pos(doc->editor, tp->pos, NULL);
-    gint rootlen = 0;
-    if(word_at_pos != NULL){
-        rootlen = strlen(word_at_pos);
-    }
+    GeanyDocument *doc = document_get_current();
     GVariantIter iter;
     g_autoptr(GVariant) items= NULL;
     if (g_variant_is_of_type (reply, G_VARIANT_TYPE_VARDICT) &&
       (items = g_variant_lookup_value (reply, "items", NULL)))
     {
-        GString *words = g_string_sized_new(130);
         g_autoptr(GVariant) node = NULL;
         g_variant_iter_init (&iter, items);
-        gint count = 0;
         gint kind = 0;
-        const gchar *snippet = NULL;
+    gint count = 0;
+        const gchar *detail;
+        const gchar *label;
         while (g_variant_iter_loop (&iter, "v", &node))
         {
-            const gchar *label;
             if(!g_variant_lookup (node, "label", "&s", &label)){
-            continue;
+                    continue;
             }
-            if(g_str_equal(label, "") || label == NULL){
+            JSONRPC_MESSAGE_PARSE (node, "kind", JSONRPC_MESSAGE_GET_INT32 (&kind));
+            JSONRPC_MESSAGE_PARSE (node, "detail", JSONRPC_MESSAGE_GET_STRING (&detail));
+            if(g_hash_table_contains(doc_track->completions, label)){
                 continue;
             }
-            if(word_at_pos != NULL){
-                // snippet = editor_find_snippet(doc->editor, word_at_pos);
-                // if(count == 0 && snippet != NULL){
-                    // g_string_append(words, snippet);
-                    // g_string_append_c(words, '\n');
-                // }
+            CompletionInfo *cinfo = g_new0(CompletionInfo, 1);
+            cinfo->label = g_strdup(label);
+            cinfo->detail = g_strdup(detail);
+            cinfo->kind = kind;
+            g_hash_table_insert(doc_track->completions, cinfo->label, cinfo);
 
-                 if(!g_str_has_suffix(label, word_at_pos)){
-                      continue;
-                }
-            }
-            g_string_append(words, label);
-            if (count > 0){
-                g_string_append_c(words, '\n');
-            }
-            if (words->len == geany_data->editor_prefs->autocompletion_max_entries)
-			{
-				g_string_append(words, "...");
-				break;
-			}
-            g_variant_lookup(node, "kind", "i", &kind);
-            //msgwin_compiler_add(COLOR_BLACK,"%s, %d", label, kind);
-            switch(kind){
-                case 1:
-                case 5:
-                case 9:
-                case 15:
-                    g_string_append(words, "?2");
-                    break;
-                default:
-                    g_string_append(words, "?1");
-                    break;
-            }
-
-            count++;
-
-
-        }
-        g_free(tp);
-    if(words->len == 0){
-        g_string_free(words, TRUE);
-        return;
+			/* for now, tag types don't all follow C, so just look at arglist */
     }
-    //msgwin_clear_tab(MSG_COMPILER);
-   /* From Geany */
-	/* hide autocompletion if only option is already typed */
-    //sci_send_command(doc->editor->sci, SCI_AUTOCCANCEL);
-	if (rootlen >= words->len ||
-		(words->str[rootlen] == '?' && rootlen >= words->len - 2))
+    GString *words = g_string_sized_new(150);
+    GHashTableIter iter;
+    gpointer key, value;
+    count = 0;
+    g_hash_table_iter_init (&iter, doc_track->completions);
+    while (g_hash_table_iter_next (&iter, &key, &value))
+    {
+        gchar *label = (gchar *)key;
+        msgwin_status_add("%s", label);
+        if(doc_track->word_at_pos != NULL && !g_str_has_prefix(label, doc_track->word_at_pos)){
+                continue;
+        }
+        g_string_append(words, label);
+        if(count > 0){
+            g_string_append_c(words, '\n');
+        }
+        count++;
+    }
+    // //msgwin_clear_tab(MSG_COMPILER);
+   // /* From Geany */
+	// /* hide autocompletion if only option is already typed */
+    // //sci_send_command(doc->editor->sci, SCI_AUTOCCANCEL);
+	if (sci_get_current_position(doc->editor->sci) > doc_track->cur_pos+1 || words->len == 0 || doc_track->rootlen >= words->len ||
+		(words->str[doc_track->rootlen] == '?' && doc_track->rootlen >= words->len - 2))
 	{
         g_string_free(words, TRUE);
 		return;
 	}
-    msgwin_compiler_add_string(COLOR_BLACK, words->str);
+    //msgwin_compiler_add_string(COLOR_BLACK, words->str);
     if(scintilla_send_message(doc->editor->sci, SCI_AUTOCACTIVE, 0, 0)){
         sci_send_command(doc->editor->sci, SCI_AUTOCCANCEL);
     }
-	scintilla_send_message(doc->editor->sci, SCI_AUTOCSHOW, rootlen, (sptr_t) words->str);
+	scintilla_send_message(doc->editor->sci, SCI_AUTOCSETORDER, SC_ORDER_PERFORMSORT, 0);
+	scintilla_send_message(doc->editor->sci, SCI_AUTOCSHOW, doc_track->rootlen, (sptr_t) words->str);
     g_string_free(words, TRUE);
-    }
+}
 }
 void
-lsp_completion_on_doc (ClientManager *client_manager, GeanyDocument *doc, gchar *uri, TriggerWithPos *tp)
+lsp_completion_on_doc (ClientManager *client_manager, GeanyDocument *doc, DocumentTracking *doc_track)
 {
+    g_free(doc_track->word_at_pos);
+    doc_track->word_at_pos = editor_get_word_at_pos(doc->editor, doc_track->cur_pos, NULL);
+    doc_track->rootlen = 0;
+    if(doc_track->word_at_pos != NULL){
+        doc_track->rootlen = strlen(doc_track->word_at_pos);
+    }
+    if(doc_track->trigger != TRIGGER_CHARACTER && doc_track->rootlen <= 2){
+        return;
+    }
   g_autoptr(GVariant) params = NULL;
   ScintillaObject *sci;
     sci = doc->editor->sci;
-    gint line = sci_get_line_from_position(sci, tp->pos);
-   gint column = sci_get_col_from_position(sci, tp->pos);
+    gint line = sci_get_line_from_position(sci, doc_track->cur_pos);
+   gint column = sci_get_col_from_position(sci, doc_track->cur_pos);
   params = JSONRPC_MESSAGE_NEW (
     "textDocument", "{",
-      "uri", JSONRPC_MESSAGE_PUT_STRING (uri),
+      "uri", JSONRPC_MESSAGE_PUT_STRING (doc_track->uri),
     "}",
     "position", "{",
       "line", JSONRPC_MESSAGE_PUT_INT32 (line),
       "character", JSONRPC_MESSAGE_PUT_INT32 (column),
     "}",
     "context", "{",
-      "triggerKind", JSONRPC_MESSAGE_PUT_INT32 (tp->trigger),
+      "triggerKind", JSONRPC_MESSAGE_PUT_INT32 (doc_track->trigger),
+      //"triggerCharacter", JSONRPC_MESSAGE_PUT_STRING(doc_track->ch),
     "}"
   );
-
-    g_autoptr(GError) error = NULL;
-    g_autoptr(GVariant) reply = NULL;
-    //jsonrpc_client_set_use_gvariant(rpc_client, FALSE);
+    //msgwin_status_add("%d", doc_track->trigger);
     jsonrpc_client_call_async (client_manager->rpc_client,
                               "textDocument/completion",
                               params,
                               NULL,
                               lsp_completion_cb,
-                              tp);
-    //jsonrpc_client_set_use_gvariant(rpc_client, TRUE);
+                              doc_track);
+
+
 }
-void lsp_completion_ask_resolve(JsonrpcClient *rpc_client, GeanyData *geany_data, gchar *text){
-    GeanyDocument *doc = document_get_current();
-  g_return_if_fail(DOC_VALID(doc));
-  g_autoptr(GVariant) params = NULL;
-  g_autofree gchar *uri = NULL;
-  gint line, column;
-    gint pos;
+void lsp_completion_ask_resolve(ClientManager *client_manager, GeanyDocument *doc, DocumentTracking *doc_track){
+    g_autoptr(GVariant) params = NULL;
+    gint line, column;
     ScintillaObject *sci;
     sci = doc->editor->sci;
-    pos = sci_get_current_position(sci);
     line = sci_get_current_line(sci);
-    GFile *dir;
-	dir = g_file_new_for_path(doc->real_path);
-	uri = g_file_get_uri(dir);
-    column = sci_get_col_from_position(sci, pos);
+    column = sci_get_col_from_position(sci, doc_track->cur_pos);
     params = JSONRPC_MESSAGE_NEW (
     "textDocument", "{",
-      "uri", JSONRPC_MESSAGE_PUT_STRING (uri),
+      "uri", JSONRPC_MESSAGE_PUT_STRING (doc_track->uri),
     "}",
     "position", "{",
       "line", JSONRPC_MESSAGE_PUT_INT32 (line),
@@ -201,7 +181,7 @@ void lsp_completion_ask_resolve(JsonrpcClient *rpc_client, GeanyData *geany_data
   );
   g_autoptr(GVariant) reply = NULL;
   g_autoptr(GError) error = NULL;
-  jsonrpc_client_call (rpc_client,
+  jsonrpc_client_call (client_manager->rpc_client,
                               "completionItem/resolve",
                               params,
                               NULL,
@@ -214,13 +194,12 @@ lsp_detail_cb (GObject  *object, GAsyncResult *result, gpointer user_data)
 {
     JsonrpcClient *rpc_client = (JsonrpcClient *)object;
     GeanyDocument *doc = document_get_current();
-    gint pos = GPOINTER_TO_INT(user_data);
   g_autoptr(GError) error = NULL;
   g_autoptr(GVariant) reply = NULL;
   if (!jsonrpc_client_call_finish (rpc_client, result, &reply, &error))
     {
       /* translators: %s is replaced with the error message */
-      msgwin_status_add("Failed to run completions: %s", error->message);
+      msgwin_status_add("Failed to run details: %s", error->message);
       return;
     }
     const gchar *message = NULL;
@@ -238,32 +217,33 @@ lsp_detail_cb (GObject  *object, GAsyncResult *result, gpointer user_data)
         msgwin_switch_tab(MSG_COMPILER, FALSE);
     }
 }
-void lsp_ask_detail(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, gint pos){
-    if(!check_capability_feature_flag(client_manager->server_capabilities, "hoverProvider", NULL)){
-        msgwin_status_add("LSP no hover feature.");
-        return;
-    }
+void lsp_ask_detail(ClientManager *client_manager, GeanyDocument *doc, DocumentTracking *doc_track){
+    // if(!check_capability_feature_flag(client_manager->server_capabilities, "hoverProvider", NULL)){
+        // msgwin_status_add("LSP no hover feature.");
+        // return;
+    // }
     g_autoptr(GVariant) params = NULL;
     gint line, column;
     ScintillaObject *sci;
     sci = doc->editor->sci;
-    line = sci_get_line_from_position(sci, pos);
-    column = sci_get_col_from_position(sci, pos);
+    line = sci_get_line_from_position(sci, doc_track->cur_pos);
+    column = sci_get_col_from_position(sci, doc_track->cur_pos);
     params = JSONRPC_MESSAGE_NEW (
     "textDocument", "{",
-      "uri", JSONRPC_MESSAGE_PUT_STRING (uri),
+      "uri", JSONRPC_MESSAGE_PUT_STRING (doc_track->uri),
     "}",
     "position", "{",
       "line", JSONRPC_MESSAGE_PUT_INT32 (line),
       "character", JSONRPC_MESSAGE_PUT_INT32 (column),
     "}"
     );
+
     jsonrpc_client_call_async (client_manager->rpc_client,
                              "textDocument/hover",
                              params,
                              NULL,
                              lsp_detail_cb,
-                             GINT_TO_POINTER(pos));
+                             NULL);
 }
 
 
@@ -274,17 +254,16 @@ lsp_signature_cb (GObject      *object,
 {
     JsonrpcClient *rpc_client = (JsonrpcClient *)object;
     GeanyDocument *doc = document_get_current();
-    TriggerWithPos *tp = user_data;
+    DocumentTracking *doc_track = user_data;
   g_autoptr(GError) error = NULL;
   g_autoptr(GVariant) reply = NULL;
   if (!jsonrpc_client_call_finish (rpc_client, result, &reply, &error))
     {
       /* translators: %s is replaced with the error message */
-      msgwin_status_add("Failed to run completions: %s", error->message);
+      msgwin_status_add("Failed to run signature help: %s", error->message);
       return;
     }
     g_autoptr(GVariant) items= NULL;
-
     if (g_variant_is_of_type (reply, G_VARIANT_TYPE_VARDICT) &&
       (items = g_variant_lookup_value (reply, "signatures", NULL)))
     {
@@ -304,7 +283,7 @@ lsp_signature_cb (GObject      *object,
             }
             g_string_append(signatures, label);
             if (count > 0){
-                // if(tp->trigger == TRIGGER_CHARACTER){
+                // if(doc_track->trigger == TRIGGER_CHARACTER){
                     // break;
                 // }
                 g_string_append_c(signatures, '\n');
@@ -313,40 +292,142 @@ lsp_signature_cb (GObject      *object,
         }
         sci_send_command(doc->editor->sci, SCI_CALLTIPCANCEL);
         if(signatures->len > 1 ){
-            scintilla_send_message(doc->editor->sci, SCI_CALLTIPSHOW, (tp->trigger != TRIGGER_CHARACTER)?scintilla_send_message(doc->editor->sci, SCI_WORDSTARTPOSITION, tp->pos, TRUE):tp->pos, (sptr_t) signatures->str);
+            scintilla_send_message(doc->editor->sci, SCI_CALLTIPSHOW, (doc_track->trigger != TRIGGER_CHARACTER)?scintilla_send_message(doc->editor->sci, SCI_WORDSTARTPOSITION, doc_track->cur_pos, TRUE):doc_track->cur_pos, (sptr_t) signatures->str);
             scintilla_send_message(doc->editor->sci, SCI_CALLTIPSETHLT, 0, signatures->len);
         }
         g_string_free(signatures, TRUE);
     }
-    g_free(tp);
 }
-void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, gchar *uri, TriggerWithPos *tp){
-    if(!check_capability_feature_flag(client_manager->server_capabilities, "signatureHelpProvider", NULL)){
-        msgwin_status_add("LSP no signature feature.");
-        return;
-    }
+void lsp_ask_signature_help(ClientManager *client_manager, GeanyDocument *doc, DocumentTracking *doc_track){
+    // if(!check_capability_feature_flag(client_manager->server_capabilities, "signatureHelpProvider", NULL)){
+        // msgwin_status_add("LSP no signature feature.");
+        // return;
+    // }
     g_autoptr(GVariant) params = NULL;
     ScintillaObject *sci;
     sci = doc->editor->sci;
-    gint line = sci_get_line_from_position(sci, tp->pos);
-    gint column = sci_get_col_from_position(sci, tp->pos);
+    gint line = sci_get_line_from_position(sci, doc_track->cur_pos);
+    gint column = sci_get_col_from_position(sci, doc_track->cur_pos);
     params = JSONRPC_MESSAGE_NEW (
     "textDocument", "{",
-      "uri", JSONRPC_MESSAGE_PUT_STRING (uri),
+      "uri", JSONRPC_MESSAGE_PUT_STRING (doc_track->uri),
     "}",
     "position", "{",
       "line", JSONRPC_MESSAGE_PUT_INT32 (line),
       "character", JSONRPC_MESSAGE_PUT_INT32 (column),
     "}",
     "context", "{",
-        "triggerKind", JSONRPC_MESSAGE_PUT_INT32 (tp->trigger),
+        "triggerKind", JSONRPC_MESSAGE_PUT_INT32 (doc_track->trigger),
     "}"
   );
+
   jsonrpc_client_call_async (client_manager->rpc_client,
                              "textDocument/signatureHelp",
                              params,
                              NULL,
                              lsp_signature_cb,
-                             tp);
+                             doc_track);
 
+}
+void lsp_ask_for_action(ClientManager *client_manager, GeanyDocument *doc, DocumentTracking *doc_track, gint action_type){
+    // if(!check_capability_feature_flag(client_manager->server_capabilities, "signatureHelpProvider", NULL)){
+        // msgwin_status_add("LSP no signature feature.");
+        // return;
+    // }
+    const gchar *action_name = NULL;
+    g_autoptr(GVariant) params = NULL;
+    ScintillaObject *sci;
+    sci = doc->editor->sci;
+    gint line = sci_get_line_from_position(sci, doc_track->cur_pos);
+    gint column = sci_get_col_from_position(sci, doc_track->cur_pos);
+    switch(action_type){
+        case IMPLEMENTION:
+            action_name = "textDocument/implementation";
+            break;
+        case DECLERATION:
+            action_name = "textDocument/declaration";
+            break;
+        case DEFINITION:
+            action_name = "textDocument/definition";
+            break;
+        case TYPE_DEFINITION:
+            action_name = "textDocument/typeDefinition";
+            break;
+        case REFERENCE:
+            action_name = "textDocument/references";
+            params = JSONRPC_MESSAGE_NEW (
+    "textDocument", "{",
+      "uri", JSONRPC_MESSAGE_PUT_STRING (doc_track->uri),
+    "}",
+    "position", "{",
+      "line", JSONRPC_MESSAGE_PUT_INT32 (line),
+      "character", JSONRPC_MESSAGE_PUT_INT32 (column),
+    "}", "context", "{", "includeDeclaration", JSONRPC_MESSAGE_PUT_BOOLEAN (line),"}"
+        );
+            break;
+    }
+    if(action_name == NULL){
+        return;
+    }
+    if(params == NULL){
+    params = JSONRPC_MESSAGE_NEW (
+    "textDocument", "{",
+      "uri", JSONRPC_MESSAGE_PUT_STRING (doc_track->uri),
+    "}",
+    "position", "{",
+      "line", JSONRPC_MESSAGE_PUT_INT32 (line),
+      "character", JSONRPC_MESSAGE_PUT_INT32 (column),
+    "}"
+        );
+    }
+    g_autoptr(GError) error = NULL;
+  g_autoptr(GVariant) reply = NULL;
+  jsonrpc_client_call (client_manager->rpc_client,
+                             action_name,
+                             params,
+                             NULL,
+                             &reply,
+                             &error);
+    Position begin;
+    Position end;
+  const gchar *uri = NULL;
+  if(g_variant_is_of_type(reply, G_VARIANT_TYPE_ARRAY)){
+    GVariantIter iter;
+    g_variant_iter_init (&iter, reply);
+    g_autoptr(GVariant) node = NULL;
+    while (g_variant_iter_loop (&iter, "v", &node))
+        {
+            if(JSONRPC_MESSAGE_PARSE (node,
+        "uri", JSONRPC_MESSAGE_GET_STRING (&uri),
+        "range", "{",
+        "start", "{",
+          "line", JSONRPC_MESSAGE_GET_INT64 (&begin.line),
+          "character", JSONRPC_MESSAGE_GET_INT64 (&begin.column),
+        "}",
+        "end", "{",
+          "line", JSONRPC_MESSAGE_GET_INT64 (&end.line),
+          "character", JSONRPC_MESSAGE_GET_INT64 (&end.column),
+        "}", "}"
+      )){
+           msgwin_status_add("%s %d, %d, %s, %d, %d", action_name, begin.line, begin.column, uri, end.line, end.column);
+    }
+
+  }
+  }
+  else {
+    if (JSONRPC_MESSAGE_PARSE (reply,
+        "uri", JSONRPC_MESSAGE_GET_STRING (&uri),
+        "range", "{",
+        "start", "{",
+          "line", JSONRPC_MESSAGE_GET_INT64 (&begin.line),
+          "character", JSONRPC_MESSAGE_GET_INT64 (&begin.column),
+        "}",
+        "end", "{",
+          "line", JSONRPC_MESSAGE_GET_INT64 (&end.line),
+          "character", JSONRPC_MESSAGE_GET_INT64 (&end.column),
+        "}", "}"
+      )){
+           msgwin_status_add("%s, %d, %d, %s, %d, %d", action_name, begin.line, begin.column, uri, end.line, end.column);
+    }
+  }
 }

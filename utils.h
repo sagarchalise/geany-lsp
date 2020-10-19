@@ -22,27 +22,22 @@
 
 #include <geanyplugin.h>
 #include <json-glib/json-glib.h>
-#define CNF_FILE "geany-lsp.json"
+#define CNF_FILE "lsp.json"
 #define GENERIC_LANGUAGE "text/plain"
 #define CLIKE_FILE "C-Like"
 typedef struct {
-    gint64 line;
-    gint64 column;
-} Position;
-typedef struct {
-	gchar *text;
-	Position begin;
-	Position end;
-} TextEdit;
-typedef struct {
 	gint version;
-	//gchar *open_content;
 	gchar *uri;
+	gint cur_pos;
+	gint trigger;
+	gchar *word_at_pos;
+	GHashTable *completions;
+	gint rootlen;
 
 } DocumentTracking;
 
 const gchar *get_file_type_name(gchar *file_name);
 void read_lsp_config_file(GeanyData *geany_data, JsonParser *cnf_parser, gboolean is_project);
-void override_cnf(GeanyData *geany_data, JsonObject *lsp_json_cnf);
+void override_cnf(GeanyData *geany_data, JsonObject *lsp_json_cnf, gboolean from_project);
 JsonObject *get_child_node_if_not_disabled(JsonObject *lsp_json_cnf, const gchar *key);
 #endif

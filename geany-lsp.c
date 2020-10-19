@@ -43,6 +43,7 @@ JsonNode *cnf_node;
 GHashTable *process_map;
 GHashTable *docs_versions;
 GMutex mutex;
+GtkWidget *goto_menu;
 
 static gboolean
 has_client_in_map (GeanyDocument *doc, gpointer user_data)
@@ -52,9 +53,9 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 	if(!json_object_has_member(lsp_json_cnf, file_type_name)){
         return FALSE;
      }
-        if(!g_mutex_trylock(&mutex)){
-            return FALSE;
-        }
+    if(!g_mutex_trylock(&mutex)){
+        return FALSE;
+    }
     ClientManager *client_manager;
 	if(g_hash_table_contains(process_map, file_type_name)){
 		client_manager = g_hash_table_lookup(process_map, file_type_name);
@@ -70,7 +71,7 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 			only_project = json_object_get_boolean_member(cur_node, "only_project");
 		}
 		if(only_project && geany_data->app->project == NULL){
-                       g_mutex_unlock(&mutex);
+            g_mutex_unlock(&mutex);
 			return FALSE;
 		}
 		JsonObject *env_members = NULL;
@@ -81,11 +82,22 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 		GSubprocess *subprocess;
 		GIOStream *iostream;
 		subprocess_launcher = g_subprocess_launcher_new (G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDIN_PIPE);
+		g_autofree gchar *root_uri = NULL;
+		g_autofree gchar *root_path = NULL;
 		if(geany_data->app->project != NULL){
+			root_path = g_strdup(geany_data->app->project->base_path);
+			g_autoptr(GFile) workdir = g_file_new_for_path(root_path);
+			root_uri = g_file_get_uri (workdir);
 			g_subprocess_launcher_set_cwd(subprocess_launcher, geany_data->app->project->base_path);
 		}
+		g_autoptr(GVariant) initialization_options = NULL;
+		if(json_object_has_member(cur_node, "initializationOptions")){
+			initialization_options = json_gvariant_deserialize (json_object_get_member(cur_node, "initializationOptions"), NULL, NULL);
+		}
+		gchar **cmd = g_strsplit(json_object_get_string_member(cur_node, "cmd"), " ", -1);
 		const gchar*  pth = "PATH";
 		g_subprocess_launcher_setenv(subprocess_launcher, "HOME", g_get_home_dir(), TRUE);
+		g_subprocess_launcher_setenv(subprocess_launcher, "PWD", (root_path == NULL)?g_get_home_dir():root_path, TRUE);
 		g_subprocess_launcher_setenv(subprocess_launcher, pth, g_getenv(pth), TRUE);;
 		if (env_members != NULL){
 			JsonObjectIter iter;
@@ -97,7 +109,7 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 				g_subprocess_launcher_setenv(subprocess_launcher, member_name, json_node_get_string(member_node), TRUE);
     		}
 		}
-		subprocess = g_subprocess_launcher_spawnv(subprocess_launcher, (const gchar**)g_strsplit(json_object_get_string_member(cur_node, "cmd"), " ", -1),NULL);
+		subprocess = g_subprocess_launcher_spawnv(subprocess_launcher, (const gchar**)cmd, NULL);
 		if (subprocess == NULL){
 			msgwin_status_add_string("Error in process spawn");
 		}
@@ -107,9 +119,28 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 			iostream = g_simple_io_stream_new (stdin,stdout);
 			if(G_IS_IO_STREAM (iostream)){
 				client_manager = g_new0(ClientManager, 1);
-				initialize_lsp_client(client_manager, iostream, geany_data);
+				if(json_object_has_member(cur_node, "configuration")){
+					client_manager->config = json_gvariant_deserialize (json_object_get_member(cur_node, "configuration"), NULL, NULL);
+				}
+				initialize_lsp_client(client_manager, iostream, root_uri, root_path, initialization_options);
+				client_manager->launcher = subprocess_launcher;
+				client_manager->process = subprocess;
+				client_manager->iostream = iostream;
+				if(client_manager->config != NULL){
+				jsonrpc_client_send_notification(client_manager->rpc_client,
+				"workspace/didChangeConfiguration",
+				client_manager->config,
+				NULL,
+				NULL);
+	}
+			}
+			else{
+				g_object_unref(iostream);
+				g_object_unref(subprocess);
+				g_object_unref(subprocess_launcher);
 			}
 		}
+		g_strfreev(cmd);
     }
     gboolean ret = FALSE;
     if(client_manager->rpc_client != NULL){
@@ -120,7 +151,7 @@ has_client_in_map (GeanyDocument *doc, gpointer user_data)
 		g_hash_table_remove(process_map, file_type_name);
 	}
 
-                       g_mutex_unlock(&mutex);
+    g_mutex_unlock(&mutex);
 	return ret;
 }
 static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
@@ -152,27 +183,22 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 	 * http://www.scintilla.org/ScintillaDoc.html#Notifications. */
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
-	g_autoptr(GVariant) completion_capabilities = get_server_capability_for_key(client_manager->server_capabilities, "completionProvider", NULL);
-	g_autoptr(GVariant) signature_capabilities = get_server_capability_for_key(client_manager->server_capabilities, "signatureHelpProvider", NULL);
-    if(completion_capabilities == NULL && signature_capabilities == NULL){
-        msgwin_status_add_string("No editor capabilities.");
-        return ret;
-    }
-	g_auto(GStrv) completion_trigger_chars = NULL;
-    gboolean completion_success;
-	completion_success = JSONRPC_MESSAGE_PARSE (completion_capabilities,
-		"triggerCharacters", JSONRPC_MESSAGE_GET_STRV (&completion_trigger_chars)
-	);
-	g_auto(GStrv) signature_trigger_chars = NULL;
-	gboolean sig_success;
-	sig_success = JSONRPC_MESSAGE_PARSE (signature_capabilities,
-		"triggerCharacters", JSONRPC_MESSAGE_GET_STRV (&signature_trigger_chars)
-	);
+	// g_autoptr(GVariant) completion_capabilities = get_server_capability_for_key(client_manager->server_capabilities, "completionProvider", NULL);
+	// g_autoptr(GVariant) signature_capabilities = get_server_capability_for_key(client_manager->server_capabilities, "signatureHelpProvider", NULL);
+     g_auto(GStrv) completion_trigger_chars = NULL;
+    gboolean completion_success=FALSE;
+	// completion_success = JSONRPC_MESSAGE_PARSE (completion_capabilities,
+		// "triggerCharacters", JSONRPC_MESSAGE_GET_STRV (&completion_trigger_chars)
+	// );
+	 g_auto(GStrv) signature_trigger_chars = NULL;
+	gboolean sig_success= FALSE;
+	// sig_success = JSONRPC_MESSAGE_PARSE (signature_capabilities,
+		// "triggerCharacters", JSONRPC_MESSAGE_GET_STRV (&signature_trigger_chars)
+	// );
 
 	GeanyPlugin *plugin = data;
-	TriggerWithPos *tp = g_new0(TriggerWithPos, 1);
-	tp->trigger = -5;
-	tp->pos = pos;
+	doc_track->cur_pos = pos;
+	doc_track->trigger = -5;
 	switch (nt->nmhdr.code)
 	{
 		case SCN_CHARADDED:
@@ -182,28 +208,29 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 					const gchar *trigger = signature_trigger_chars[j];
 
 					if(nt->ch == g_utf8_get_char(trigger)){
-						tp->trigger = TRIGGER_CHARACTER;
+						doc_track->trigger = TRIGGER_CHARACTER;
 						break;
 					}
 				}
 			}
-			if(tp->trigger == TRIGGER_CHARACTER){
-				lsp_ask_signature_help(client_manager, doc, doc_track->uri, tp);
+			if(doc_track->trigger == TRIGGER_CHARACTER){
+				lsp_ask_signature_help(client_manager, doc, doc_track);
 			}
 			else{
+				sci_send_command(editor->sci, SCI_CALLTIPCANCEL);
 				if(completion_success){
 					for (guint i = 0; completion_trigger_chars[i]; i++)
 					{
 						const gchar *trigger = completion_trigger_chars[i];
 
 						if(nt->ch == g_utf8_get_char(trigger)){
-							tp->trigger = TRIGGER_CHARACTER;
+							doc_track->trigger = TRIGGER_CHARACTER;
 							break;
 
 						}
 					}
 				}
-				if(tp->trigger != TRIGGER_CHARACTER){
+				if(doc_track->trigger != TRIGGER_CHARACTER){
 					switch(nt->ch){
 						case '\r':
 						case '\n':
@@ -218,19 +245,18 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 						case ' ':
 							break;
 						default:
-							tp->trigger = TRIGGER_INVOKED;
+							doc_track->trigger = TRIGGER_INVOKED;
 							break;
 					}
 				}
-				if (tp->trigger > 0){
-					lsp_completion_on_doc(client_manager, doc, doc_track->uri, tp);
-				}
-				else{
-					g_free(tp);
+				if (doc_track->trigger > 0){
+					lsp_completion_on_doc(client_manager, doc, doc_track);
 				}
 			}
 			break;
-		// case SCN_AUTOCCOMPLETED:
+		case SCN_AUTOCCOMPLETED:
+        case SCN_AUTOCSELECTION:
+			msgwin_status_add("%s", nt->text);
             // if (editor_find_snippet(editor, nt->text) != NULL){
                 // keybindings_send_command(GEANY_KEY_GROUP_EDITOR, GEANY_KEYS_EDITOR_COMPLETESNIPPET );
 			// }
@@ -238,25 +264,23 @@ static gboolean on_editor_notify(GObject *object, GeanyEditor *editor,
 				// //lsp_ask_doc(client_manager->rpc_client, plugin->geany_data, nt->position);
 				// //ls_completion_ask_resolve(client_manager->rpc_client, plugin->geany_data, nt->text);
 			// }
-             // break;
-        // case SCN_AUTOCSELECTION:
+            break;
+
 			// lsp_ask_detail(client_manager->rpc_client, plugin->geany_data, nt->position);
-			// break;
+			//break;
             //self.get_jedi_doc_and_signatures(editor, pos, text=nt_text, doc=False)
 		case SCN_DWELLSTART:
-			tp->trigger = TRIGGER_CHANGE;
-            tp->pos = nt->position;
-			lsp_ask_detail( client_manager, doc, doc_track->uri, tp->pos);
-                        lsp_ask_signature_help(client_manager, doc, doc_track->uri, tp);
+			doc_track->trigger = TRIGGER_CHANGE;
+            doc_track->cur_pos = nt->position;
+			lsp_ask_detail( client_manager, doc, doc_track);
+            lsp_ask_signature_help(client_manager, doc, doc_track);
 			break;
         case SCN_DWELLEND:
-			g_free(tp);
-            sci_send_command(editor->sci, SCI_CALLTIPCANCEL);
+			sci_send_command(editor->sci, SCI_CALLTIPCANCEL);
 			msgwin_clear_tab(MSG_COMPILER);
             break;
         default:
-			g_free(tp);
-            break;
+			break;
 		}
 	return ret;
 }
@@ -270,6 +294,11 @@ void add_doc_to_tracking(GeanyDocument *doc){
 	DocumentTracking *doc_track;
 	doc_track = g_new0(DocumentTracking, 1);
 	doc_track->version = 0;
+	doc_track->cur_pos = -1;
+	doc_track->trigger = -5;
+	doc_track->rootlen = 0;
+	doc_track->word_at_pos = NULL;
+	doc_track->completions = g_hash_table_new(g_str_hash, g_str_equal);
 	g_autoptr(GFile) dir = g_file_new_for_path(doc->real_path);
 	doc_track->uri = g_file_get_uri(dir);
 	g_hash_table_insert(docs_versions, GUINT_TO_POINTER(doc->id), doc_track);
@@ -277,6 +306,8 @@ void add_doc_to_tracking(GeanyDocument *doc){
 
 
 static void on_document_open(GObject *obj, GeanyDocument *doc, gpointer user_data){
+	msgwin_status_add("%s",gtk_menu_item_get_label(GTK_MENU_ITEM(goto_menu)));
+	//gtk_menu_item_hide(GTK_MENU_ITEM(goto_menu));
 	if(!has_client_in_map(doc, user_data)){
 		msgwin_status_add("No LSP Server for %s file type", get_file_type_name(doc->file_type->name));
         return;
@@ -285,6 +316,11 @@ static void on_document_open(GObject *obj, GeanyDocument *doc, gpointer user_dat
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
 	lsp_doc_opened(client_manager, doc, doc_track);
+}
+static void on_document_activate(GObject *obj, GeanyDocument *doc, gpointer user_data){
+	if(has_client_in_map(doc, user_data)){
+	   add_doc_to_tracking(doc);
+	}
 }
 static void on_document_save(GObject *obj, GeanyDocument *doc, gpointer user_data){
 	if(!has_client_in_map(doc, user_data)){
@@ -308,7 +344,6 @@ static void on_document_before_save(GObject *obj, GeanyDocument *doc, gpointer u
 	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
 	doc_track->version += 1;
-	msgwin_status_add("heelo");
 	lsp_doc_changed(client_manager, doc, doc_track);
 
 }
@@ -317,11 +352,42 @@ static void on_document_close(GObject *obj, GeanyDocument *doc, gpointer user_da
 		//msgwin_status_add("No LSP Server for %s file type", get_file_type_name(doc->file_type->name));
         return;
 	}
-	ClientManager *client_manager = g_hash_table_lookup(process_map, get_file_type_name(doc->file_type->name));
+	const gchar *file_type_name = get_file_type_name(doc->file_type->name);
+	ClientManager *client_manager = g_hash_table_lookup(process_map, file_type_name);
 	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
 	lsp_doc_closed(client_manager, doc, doc_track->uri);
 	g_free(doc_track->uri);
+	g_free(doc_track->word_at_pos);
+	guint i;
+	GHashTableIter diter;
+	g_hash_table_iter_init (&diter, doc_track->completions);
+	gpointer dkey, dvalue;
+	while (g_hash_table_iter_next (&diter, &dkey, &dvalue))
+	{
+		CompletionInfo *cinfo = (CompletionInfo *)dvalue;
+		g_free(cinfo->label);
+		g_free(cinfo->detail);
+		g_free(cinfo);
+	}
+	g_hash_table_destroy(doc_track->completions);
 	g_free(doc_track);
+	gboolean clear_clients = TRUE;
+	foreach_document(i)
+	{
+		GeanyDocument *open_doc = documents[i];
+		if(open_doc->id == doc->id){
+			continue;
+		}
+		if(g_str_equal(open_doc->file_type->name, doc->file_type->name)){
+			clear_clients = FALSE;
+			break;
+		}
+	}
+	if(!clear_clients){
+		return;
+	}
+	shutdown_lsp_client(client_manager);
+	g_hash_table_remove(process_map, file_type_name);
 }
 static void destroy_everything(){
 	GHashTableIter iter;
@@ -330,21 +396,35 @@ static void destroy_everything(){
 	while (g_hash_table_iter_next (&iter, &key, &value))
 	{
 		ClientManager *cm = (ClientManager *)value;
-		shutdown_lsp_client(cm->rpc_client);
-		g_object_unref(cm->server_capabilities);
-		g_object_unref(cm->rpc_client);
-		g_free(cm);
+		shutdown_lsp_client(cm);
 	}
 	g_hash_table_iter_init (&iter, docs_versions);
 	while (g_hash_table_iter_next (&iter, &key, &value))
 	{
 		DocumentTracking *dt = (DocumentTracking *)value;
 		g_free(dt->uri);
+		g_free(dt->word_at_pos);
+		GHashTableIter diter;
+		gpointer dkey, dvalue;
+		g_hash_table_iter_init (&diter, dt->completions);
+		while (g_hash_table_iter_next (&diter, &dkey, &dvalue))
+		{
+			CompletionInfo *cinfo = (CompletionInfo *)dvalue;
+			g_free(cinfo->label);
+			g_free(cinfo->detail);
+			g_free(cinfo);
+		}
+		g_hash_table_destroy(dt->completions);
 		g_free(dt);
 	}
 }
+
+
 static void on_project_open(GObject *obj, GKeyFile *config, gpointer user_data){
-	override_cnf(geany_data, lsp_json_cnf);
+	override_cnf(geany_data, lsp_json_cnf, TRUE);
+}
+static void on_project_close(GObject *obj, gpointer user_data){
+	override_cnf(geany_data, lsp_json_cnf, FALSE);
 }
 
 static PluginCallback demo_callbacks[] =
@@ -357,11 +437,29 @@ static PluginCallback demo_callbacks[] =
 	 {"document-save", (GCallback) & on_document_save, FALSE, NULL},
 	 {"document-before-save", (GCallback) & on_document_before_save, FALSE, NULL},
 	 {"project-open", (GCallback) & on_project_open, FALSE, NULL},
-	 //{"document-activate", (GCallback) & on_document_activate, FALSE, NULL},
+	 {"project-close", (GCallback) & on_project_close, FALSE, NULL},
+	{"document-activate", (GCallback) & on_document_activate, FALSE, NULL},
 	{ "editor-notify", (GCallback) &on_editor_notify, FALSE, NULL },
 	{ NULL, NULL, FALSE, NULL }
 };
 
+static void menu_item_action(G_GNUC_UNUSED GtkMenuItem *menuitem, gpointer user_data){
+    GeanyDocument *doc = document_get_current();
+    if(!has_client_in_map(doc, user_data)){
+		//msgwin_status_add("No LSP Server for %s file type", get_file_type_name(doc->file_type->name));
+        return;
+	}
+	const gchar *file_type_name = get_file_type_name(doc->file_type->name);
+	ClientManager *client_manager = g_hash_table_lookup(process_map, file_type_name);
+	DocumentTracking *doc_track = g_hash_table_lookup(docs_versions, GUINT_TO_POINTER(doc->id));
+	doc_track->cur_pos = sci_get_current_position(doc->editor->sci);
+	lsp_ask_for_action(client_manager, doc, doc_track, 0);
+	lsp_ask_for_action(client_manager, doc, doc_track, 1);
+	lsp_ask_for_action(client_manager, doc, doc_track, 2);
+	lsp_ask_for_action(client_manager, doc, doc_track, 3);
+	lsp_ask_for_action(client_manager, doc, doc_track, 4);
+	lsp_ask_for_action(client_manager, doc, doc_track, 5);
+}
 
 /* Called by Geany to initialize the plugin */
 static gboolean demo_init(GeanyPlugin *plugin, gpointer data)
@@ -370,7 +468,6 @@ static gboolean demo_init(GeanyPlugin *plugin, gpointer data)
 	process_map = g_hash_table_new(g_str_hash, g_str_equal);
 	docs_versions = g_hash_table_new(g_direct_hash, g_direct_equal);
 	cnf_parser = json_parser_new();
-	read_lsp_config_file(geany_data, cnf_parser, FALSE);
 	read_lsp_config_file(geany_data, cnf_parser, FALSE);
 	if(cnf_parser != NULL){
 		cnf_node = json_parser_get_root(cnf_parser);
@@ -386,6 +483,8 @@ static gboolean demo_init(GeanyPlugin *plugin, gpointer data)
 			add_doc_to_tracking(doc);
 		}
 	}
+	goto_menu = ui_lookup_widget(geany_data->main_widgets->editor_menu, "goto_tag_definition2");
+	g_signal_connect(GTK_MENU_ITEM(goto_menu), "activate", G_CALLBACK(menu_item_action), geany_data);
 	geany_plugin_set_data(plugin, plugin, NULL);
 
 	return TRUE;

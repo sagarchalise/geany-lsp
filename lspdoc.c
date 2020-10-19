@@ -34,8 +34,8 @@ static
 gboolean check_text_capability_flag(GVariant *server_capabilities, const gchar *key){
     g_autoptr(GVariant) capabilities = get_server_capability_for_key(server_capabilities, DOC_SYNC, NULL);
     if(capabilities == NULL){
+        return TRUE;
         msgwin_status_add("No text capabilities for %s.", key);
-        return FALSE;
     }
     if(g_variant_is_of_type(capabilities, G_VARIANT_TYPE_INT64)){
         return TRUE;
@@ -52,9 +52,9 @@ gboolean check_text_capability_flag(GVariant *server_capabilities, const gchar *
 
 void lsp_doc_opened (ClientManager *client_manager, GeanyDocument *doc, DocumentTracking *doc_track)
 {
-    if(!check_text_capability_flag(client_manager->server_capabilities, OPENCLOSE_KEY)){
-        return;
-    }
+    // if(!check_text_capability_flag(client_manager->server_capabilities, OPENCLOSE_KEY)){
+        // return;
+    // }
   g_autoptr(GVariant) params = NULL;
   g_autofree gchar *content = sci_get_contents(doc->editor->sci, -1);
   params = JSONRPC_MESSAGE_NEW (
@@ -76,9 +76,9 @@ void lsp_doc_opened (ClientManager *client_manager, GeanyDocument *doc, Document
 void
 lsp_doc_closed (ClientManager *client_manager, GeanyDocument *doc, gchar *uri)
 {
-    if(!check_text_capability_flag(client_manager->server_capabilities, OPENCLOSE_KEY)){
-        return;
-    }
+    // if(!check_text_capability_flag(client_manager->server_capabilities, OPENCLOSE_KEY)){
+        // return;
+    // }
     msgwin_status_add_string("LSP didClose calling.");
     g_autoptr(GVariant) params = NULL;
   params = JSONRPC_MESSAGE_NEW (
@@ -95,19 +95,19 @@ lsp_doc_closed (ClientManager *client_manager, GeanyDocument *doc, gchar *uri)
 
 void
 lsp_doc_changed(ClientManager *client_manager, GeanyDocument *doc, DocumentTracking *doc_track){
-    g_autoptr(GVariant) capabilities = get_server_capability_for_key(client_manager->server_capabilities, DOC_SYNC, NULL);
-    if(capabilities == NULL){
-        msgwin_status_add("No text capabilities for %s.", DOC_SYNC);
-        return;
-    }
+   // g_autoptr(GVariant) capabilities = get_server_capability_for_key(client_manager->server_capabilities, DOC_SYNC, NULL);
+    // if(capabilities == NULL){
+        // msgwin_status_add("No text capabilities for %s.", DOC_SYNC);
+        // return;
+    // }
     gint64 sync_kind = 0;
-    if(!JSONRPC_MESSAGE_PARSE (capabilities,
-        CHANGE, JSONRPC_MESSAGE_GET_INT64 (&sync_kind)
-        )
-    )
-    {
-        return;
-    }
+    // if(!JSONRPC_MESSAGE_PARSE (capabilities,
+        // CHANGE, JSONRPC_MESSAGE_GET_INT64 (&sync_kind)
+        // )
+    // )
+    // {
+        // return;
+    // }
     // if(sync_kind == 2){
         // return;
     // }
@@ -134,30 +134,30 @@ msgwin_status_add_string("LSP didChange calling.");
 void
 lsp_doc_saved (ClientManager *client_manager, GeanyDocument *doc, gchar *uri)
 {
-    g_autoptr(GVariant) capabilities = get_server_capability_for_key(client_manager->server_capabilities, DOC_SYNC, NULL);
-    if(capabilities == NULL){
-        msgwin_status_add("No text capabilities for %s.", DOC_SYNC);
-        return;
-    }
-    gint64 sync_kind = 0;
-    g_autoptr(GVariant) value = NULL;
-    gboolean include_text = TRUE;
-    if(JSONRPC_MESSAGE_PARSE (capabilities,
-        CHANGE, JSONRPC_MESSAGE_GET_INT64 (&sync_kind),
-        SAVE, JSONRPC_MESSAGE_GET_VARIANT (&value)
-        )
-    ){
-        if (g_variant_is_of_type (value, G_VARIANT_TYPE_BOOLEAN)){
-            include_text = g_variant_get_boolean(value);
-        }
-        else{
-            JSONRPC_MESSAGE_PARSE (value, INCLUDE_TEXT, JSONRPC_MESSAGE_GET_BOOLEAN(&include_text));
-        }
-    }
-    if(sync_kind > 1 && !include_text){
-        include_text = TRUE;
-    }
-    msgwin_status_add("LSP calling didSave. Including text: %d", include_text);
+    // g_autoptr(GVariant) capabilities = get_server_capability_for_key(client_manager->server_capabilities, DOC_SYNC, NULL);
+    // if(capabilities == NULL){
+        // msgwin_status_add("No text capabilities for %s.", DOC_SYNC);
+        // return;
+    // }
+    // gint64 sync_kind = 0;
+    // g_autoptr(GVariant) value = NULL;
+    // gboolean include_text = TRUE;
+    // if(JSONRPC_MESSAGE_PARSE (capabilities,
+        // CHANGE, JSONRPC_MESSAGE_GET_INT64 (&sync_kind),
+        // SAVE, JSONRPC_MESSAGE_GET_VARIANT (&value)
+        // )
+    // ){
+        // if (g_variant_is_of_type (value, G_VARIANT_TYPE_BOOLEAN)){
+            // include_text = g_variant_get_boolean(value);
+        // }
+        // else{
+            // JSONRPC_MESSAGE_PARSE (value, INCLUDE_TEXT, JSONRPC_MESSAGE_GET_BOOLEAN(&include_text));
+        // }
+    // }
+    // if(sync_kind > 1 && !include_text){
+        // include_text = TRUE;
+    // }
+    //msgwin_status_add("LSP calling didSave. Including text: %d", include_text);
     g_autoptr(GVariant) params = NULL;
     //if (include_text){
     g_autofree gchar *content = NULL;
@@ -185,9 +185,9 @@ lsp_doc_saved (ClientManager *client_manager, GeanyDocument *doc, gchar *uri)
 void
 lsp_doc_will_save(ClientManager *client_manager, GeanyDocument *doc, gchar *uri)
 {
-    if(!check_text_capability_flag(client_manager->server_capabilities, WILLSAVE)){
-        return;
-    }
+    // if(!check_text_capability_flag(client_manager->server_capabilities, WILLSAVE)){
+        // return;
+    // }
     msgwin_status_add("LSP calling willSave.");
     g_autoptr(GVariant) params = NULL;
     params = JSONRPC_MESSAGE_NEW (
@@ -266,10 +266,10 @@ lsp_format_doc_cb (GObject      *object,
 }
 
 void lsp_doc_format(ClientManager *client_manager, GeanyDocument *doc, gchar *uri){
-    if(!check_by_flag_on_server(client_manager->server_capabilities, DOC_FORMATTING)){
-        msgwin_status_add_string("LSP no formatting support.");
-        return;
-    }
+    // if(!check_by_flag_on_server(client_manager->server_capabilities, DOC_FORMATTING)){
+        // msgwin_status_add_string("LSP no formatting support.");
+        // return;
+    // }
     const GeanyIndentPrefs *indent_prefs = editor_get_indent_prefs(doc->editor);
     g_autoptr(GVariant) params = NULL;
     params = JSONRPC_MESSAGE_NEW (

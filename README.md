@@ -10,7 +10,7 @@
     make
     ```
 
-    - currently install by copying geany-lsp.so and geany-lsp.json into ~/.config/geany/plugins
+    - currently install by copying geany-lsp.so and lsp.json into ~/.config/geany/plugins
     - enable the plugin from geany editor.
 
 

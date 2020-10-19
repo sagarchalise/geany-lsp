@@ -54,10 +54,10 @@ void override_each_data(JsonObject *root_obj, JsonObject *override_obj){
 	}
 }
 
-void override_cnf(GeanyData *geany_data, JsonObject *lsp_json_cnf){
+void override_cnf(GeanyData *geany_data, JsonObject *lsp_json_cnf, gboolean from_project){
 	g_autoptr(JsonParser) proj_json_parser=NULL;
 	proj_json_parser = json_parser_new();
-	read_lsp_config_file(geany_data, proj_json_parser, TRUE);
+	read_lsp_config_file(geany_data, proj_json_parser, from_project);
 	if(proj_json_parser == NULL){
 		return;
 	}
