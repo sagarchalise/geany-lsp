@@ -210,13 +210,12 @@ initialize_client_cb (GObject      *object,
 
   if (jsonrpc_client_call_finish (rpc_client, result, &reply, &error)){
     g_autoptr(GVariant) initialized_param = NULL;
-    ClientManager *client_manager = user_data;
+    JsonNode *server_capabilities = user_data;
     g_autoptr(GVariant) capabilities = NULL;
     capabilities = g_variant_lookup_value (reply, "capabilities", G_VARIANT_TYPE_VARDICT);
     if(capabilities != NULL){
-        client_manager->server_capabilities =json_gvariant_serialize(capabilities);
+        server_capabilities =json_gvariant_serialize(capabilities);
     }
-        //client_manager->server_capabilities = g_variant_lookup_value (reply, "capabilities", G_VARIANT_TYPE_VARDICT);
     initialized_param = JSONRPC_MESSAGE_NEW ("initializedParams", "{", "}");
 
     jsonrpc_client_send_notification(rpc_client,

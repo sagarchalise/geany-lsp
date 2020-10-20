@@ -68,15 +68,15 @@ void override_cnf(GeanyData *geany_data, JsonObject *lsp_json_cnf, gboolean from
 JsonObject *get_child_node_if_not_disabled(JsonObject *lsp_json_cnf, const gchar *key){
 	JsonArray *disabled_member;
 	JsonNode *disabled_node;
-	if(json_object_has_member(lsp_json_cnf, "disabled")){
-		disabled_node = json_object_get_member(lsp_json_cnf, "disabled");
-		if(JSON_NODE_HOLDS_ARRAY(disabled_node)){
-			disabled_member = json_node_get_array(disabled_node);
-		}
-	}
-	gboolean is_disabled = FALSE;
-	if (disabled_member != NULL){
-		g_autoptr(GList) array_elements = json_array_get_elements(disabled_member);
+	if(!json_object_has_member(lsp_json_cnf, "disabled")){
+    return json_object_get_object_member(lsp_json_cnf, key);
+  }
+	disabled_node = json_object_get_member(lsp_json_cnf, "disabled");
+	if(JSON_NODE_HOLDS_ARRAY(disabled_node)){
+		disabled_member = json_node_get_array(disabled_node);
+		gboolean is_disabled = FALSE;
+	  if (disabled_member != NULL){
+		  g_autoptr(GList) array_elements = json_array_get_elements(disabled_member);
 		GList *l;
 		for (l = array_elements; l != NULL; l = l->next)
 		{
@@ -85,9 +85,9 @@ JsonObject *get_child_node_if_not_disabled(JsonObject *lsp_json_cnf, const gchar
 				break;
 			}
 		}
-	}
-	if(is_disabled){
-		return NULL;
-	}
-	return json_object_get_object_member(lsp_json_cnf, key);
+	  }
+	  if(!is_disabled){
+		  return json_object_get_object_member(lsp_json_cnf, key);
+    }
+  }
 }
